@@ -64,6 +64,11 @@ def test_render_managed_mcp_with_web_exposure() -> None:
     kinds = [item["kind"] for item in manifests]
     assert kinds == ["Deployment", "Service", "HTTPRoute"]
     deploy = manifests[0]
+    assert "vmcp.io/workload-checksum" in deploy["metadata"]["annotations"]
+    assert (
+        deploy["spec"]["template"]["metadata"]["annotations"]["vmcp.io/workload-checksum"]
+        == deploy["metadata"]["annotations"]["vmcp.io/workload-checksum"]
+    )
     container = deploy["spec"]["template"]["spec"]["containers"][0]
     env = {item["name"]: item["value"] for item in container["env"]}
     assert env["ARCHITECT_C4_PUBLIC_BASE"] == "https://architect.example.com"

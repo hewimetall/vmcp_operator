@@ -76,3 +76,10 @@ def test_crd_files_present_for_server_side_apply_upgrade() -> None:
     # Upgrade path documented: kubectl apply --server-side before helm --skip-crds
     assert "vmcpgateways.vmcp.io" in gateway
     assert "vmcpmcpservers.vmcp.io" in mcp
+
+
+def test_values_schema_enforces_required_install_params() -> None:
+    schema = (CHART / "values.schema.json").read_text(encoding="utf-8")
+    assert '"watchNamespaces"' in schema
+    assert '"allowedImagePrefixes"' in schema
+    assert '"const": 1' in schema

@@ -4,7 +4,7 @@ CARGO ?= cargo
 HELM ?= helm
 CHART ?= charts/vmcp-operator
 
-.PHONY: sync develop test-py test-rs lint-py lint-rs cov-py cov-rs helm-lint helm-template helm-package spike
+.PHONY: sync develop test-py test-rs lint-py lint-rs cov-py cov-rs helm-lint helm-template helm-package helm-push-local spike
 
 sync:
 	$(UV) sync --extra dev
@@ -39,6 +39,9 @@ helm-template:
 
 helm-package:
 	bash scripts/package_chart.sh
+
+helm-push-local:
+	bash scripts/push_chart_local_oci.sh
 
 spike:
 	PYTHON_LAZY_IMPORTS=normal $(PYTHON) scripts/phase_minus_one_kopf_spike.py

@@ -35,12 +35,17 @@ In constrained VMs use KWOK for API-level concurrency proof.
 - `PlanSkillsSync` / finalizer helpers (admin-owned skills preserved; unregister-before-GC)
 - `Kr8sServerSideApplier` + `ServerSideApply` conflict retry
 
-## Helm package (local OCI-ready artifact)
+## Helm package / OCI push
 
 ```bash
 make helm-package
 # → dist/charts/vmcp-operator-0.1.0.tgz
-# Push when registry credentials are available:
+
+# Prove OCI push/pull against a local registry (no org credentials):
+make helm-push-local
+# → oci://127.0.0.1:5001/charts/vmcp-operator:0.1.0
+
+# Production push when registry credentials are available:
 # helm push dist/charts/vmcp-operator-0.1.0.tgz oci://$REGISTRY/charts
 ```
 

@@ -7,6 +7,10 @@ from typing import Any
 
 from vmcp_operator.domain.models.gateway import GatewayDesired, GatewayParentRef
 from vmcp_operator.domain.models.mcp import ContainerImageSource, McpServerDesired
+from vmcp_operator.domain.usecases.checksum_rollout import (
+    annotate_checksum,
+    managed_workload_checksum,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,16 +47,26 @@ class RenderMcpManifests:
                         "value": f"https://{exposure.hostname}",
                     }
                 )
+        checksum = managed_workload_checksum(
+            image=mcp.source.image,
+            env=tuple((item["name"], item["value"]) for item in env),
+            ports=tuple((p.name, p.container_port) for p in mcp.source.ports),
+            mcp_path=mcp.source.mcp_endpoint.path,
+        )
+        pod_meta = annotate_checksum({"labels": labels}, checksum)
 
         deployment = {
             "apiVersion": "apps/v1",
             "kind": "Deployment",
-            "metadata": {"name": child, "namespace": ns, "labels": labels},
+            "metadata": annotate_checksum(
+                {"name": child, "namespace": ns, "labels": labels},
+                checksum,
+            ),
             "spec": {
                 "replicas": 1,
                 "selector": {"matchLabels": labels},
                 "template": {
-                    "metadata": {"labels": labels},
+                    "metadata": pod_meta,
                     "spec": {
                         "containers": [
                             {
