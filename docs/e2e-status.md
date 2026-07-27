@@ -13,9 +13,8 @@
 ## Blocked here (host limitation)
 
 **kind / k3s kubelet pod e2e** cannot boot: nested cgroup v2 prevents
-`kindest/node` from reaching `multi-user.target` (see agent artifact
-`kind-final-attempt.log`). fuse-overlayfs was installed; failure remains
-systemd/cgroup nesting, not missing tooling.
+`kindest/node` from reaching `multi-user.target`. fuse-overlayfs was installed;
+failure remains systemd/cgroup nesting, not missing tooling.
 
 When a capable host is available:
 
@@ -25,7 +24,7 @@ kubectl apply --server-side -f charts/vmcp-operator/crds/
 helm upgrade -i vmcp-operator ./charts/vmcp-operator -n vmcp-system --create-namespace \
   --set 'watchNamespaces={team-a}' \
   --set 'policy.allowedImagePrefixes={registry.example.com/ai}'
-# then apply deploy/profiles/* and run live pod assertions from PLAN Phase 5
+# then apply deploy/profiles/* and run live pod assertions
 ```
 
 Production OCI publish is the same as `make helm-push-local` with org registry

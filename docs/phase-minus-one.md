@@ -13,9 +13,7 @@
 Artifacts:
 
 - `scripts/phase_minus_one_kopf_spike.py`
-- agent run: `phase-minus-one-result.json` (90s soak)
-- agent run: `phase-minus-one-soak-120s.json` (120s soak, GIL false, 100 mutations)
-- agent run: `phase-minus-one-soak-30m.json` (30-minute soak: GIL false, 1462 mutations, http_ok)
+- soak result JSON via `VMCP_SPIKE_RESULT` (default `/tmp/phase-minus-one-result.json`)
 
 ## Cluster note
 
