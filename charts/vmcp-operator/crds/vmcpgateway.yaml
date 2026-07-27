@@ -1,0 +1,189 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: vmcpgateways.vmcp.io
+  labels:
+    app.kubernetes.io/name: vmcp-operator
+    app.kubernetes.io/component: crd
+spec:
+  group: vmcp.io
+  names:
+    kind: VmcpGateway
+    listKind: VmcpGatewayList
+    plural: vmcpgateways
+    singular: vmcpgateway
+    shortNames:
+      - vg
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          description: Independent vmcp gateway instance managed by the operator.
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              type: object
+              required:
+                - image
+                - adminTokenSecretRef
+                - masterPasswordSecretRef
+                - publicRoute
+              properties:
+                image:
+                  type: string
+                  minLength: 1
+                  description: OCI image for this vmcp instance (must match operator allowlist).
+                replicas:
+                  type: integer
+                  minimum: 1
+                  maximum: 1
+                  default: 1
+                adminTokenSecretRef:
+                  type: object
+                  required: [name]
+                  properties:
+                    name:
+                      type: string
+                      minLength: 1
+                  description: Secret with tokens.json for bootstrap/admin API access.
+                masterPasswordSecretRef:
+                  type: object
+                  required: [name]
+                  properties:
+                    name:
+                      type: string
+                      minLength: 1
+                    key:
+                      type: string
+                      default: password
+                publicRoute:
+                  type: object
+                  required: [hostname, gatewayRef]
+                  properties:
+                    hostname:
+                      type: string
+                      minLength: 1
+                    gatewayRef:
+                      type: object
+                      required: [name]
+                      properties:
+                        name:
+                          type: string
+                        namespace:
+                          type: string
+                        sectionName:
+                          type: string
+                    annotations:
+                      type: object
+                      additionalProperties:
+                        type: string
+                adminRoute:
+                  type: object
+                  description: Optional distinct hostname exposing only /admin.
+                  properties:
+                    hostname:
+                      type: string
+                    gatewayRef:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        namespace:
+                          type: string
+                        sectionName:
+                          type: string
+                    annotations:
+                      type: object
+                      additionalProperties:
+                        type: string
+                persistence:
+                  type: object
+                  properties:
+                    size:
+                      type: string
+                      default: 5Gi
+                    storageClassName:
+                      type: string
+                    reclaimPolicy:
+                      type: string
+                      enum: [Retain, Delete]
+                      default: Retain
+                gql:
+                  type: object
+                  properties:
+                    maxComplexity:
+                      type: integer
+                    maxDepth:
+                      type: integer
+                proxy:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    path:
+                      type: string
+                tasks:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: false
+                    maxConcurrent:
+                      type: integer
+                      minimum: 1
+                skillRefs:
+                  type: array
+                  items:
+                    type: object
+                    required: [name]
+                    properties:
+                      name:
+                        type: string
+                      key:
+                        type: string
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                observedGeneration:
+                  type: integer
+                  format: int64
+                artifactSha256:
+                  type: string
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    required: [type, status]
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                      reason:
+                        type: string
+                      message:
+                        type: string
+                      lastTransitionTime:
+                        type: string
+                        format: date-time

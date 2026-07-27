@@ -3,12 +3,37 @@
 Kubernetes operator for managing multiple isolated
 [vmcp](https://github.com/hewimetall/vmcp) gateway instances.
 
-The project is being implemented from the architecture plan with:
+One singleton operator watches an explicit namespace allowlist and reconciles
+independent `{namespace}/{VmcpGateway}` stacks (Deployment, Service, PVC,
+atomic artifact ConfigMap, credentials, public/admin HTTPRoutes) plus attached
+`VmcpMcpServer` upstreams (`ContainerImage` or `RemoteHttp`).
 
-- Python 3.15 free-threaded controller code;
-- a pure Rust core plus a thin PyO3 `abi3t` extension;
-- Helm-distributed CRDs/RBAC/operator control plane;
-- TDD gates of at least 98% Python and 93% Rust core line coverage.
+## Stack
 
-The first execution gate verifies that the selected Python/Kubernetes/PyO3
-stack runs without silently re-enabling the GIL.
+- Python 3.15 free-threaded controller (`PYTHON_LAZY_IMPORTS=normal`)
+- Pure Rust `vmcp-op-core` + thin PyO3 `vmcp-op-pyo3` (`abi3t-py315`)
+- Helm chart installs CRDs/RBAC/operator/dashboard only (never vmcp workloads)
+- Vendored Grid.js 6.2.0 + Tabler 1.4.0 dashboard assets
+- TDD gates: Python ≥98%, Rust core ≥93%
+
+## Layout
+
+```text
+charts/vmcp-operator/   Helm install surface
+python/vmcp_operator/   HEX controller + dashboard static
+crates/                 vmcp-op-core, vmcp-op-pyo3
+deploy/samples/         example CRs
+deploy/profiles/        resurche / code / other bundles
+scripts/                compatibility spike helpers
+docs/                   gate notes
+```
+
+## Quick checks
+
+```bash
+uv sync --extra dev
+uv run maturin develop
+make test-py test-rs helm-lint
+```
+
+Phase −1 compatibility results: [docs/phase-minus-one.md](docs/phase-minus-one.md).

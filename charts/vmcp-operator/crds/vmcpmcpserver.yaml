@@ -1,0 +1,199 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: vmcpmcpservers.vmcp.io
+  labels:
+    app.kubernetes.io/name: vmcp-operator
+    app.kubernetes.io/component: crd
+spec:
+  group: vmcp.io
+  names:
+    kind: VmcpMcpServer
+    listKind: VmcpMcpServerList
+    plural: vmcpmcpservers
+    singular: vmcpmcpserver
+    shortNames:
+      - vms
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Gateway
+          type: string
+          jsonPath: .spec.gatewayRef.name
+        - name: Source
+          type: string
+          jsonPath: .spec.source.type
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          description: MCP upstream attached to a same-namespace VmcpGateway.
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              type: object
+              required:
+                - gatewayRef
+                - source
+              properties:
+                enabled:
+                  type: boolean
+                  default: true
+                description:
+                  type: string
+                gatewayRef:
+                  type: object
+                  required: [name]
+                  properties:
+                    name:
+                      type: string
+                      minLength: 1
+                  description: Same-namespace VmcpGateway aggregate key.
+                source:
+                  type: object
+                  required: [type]
+                  properties:
+                    type:
+                      type: string
+                      enum: [ContainerImage, RemoteHttp]
+                    image:
+                      type: string
+                    url:
+                      type: string
+                      description: Remote Streamable HTTP URL for RemoteHttp.
+                    bearerSecretRef:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        key:
+                          type: string
+                          default: token
+                    ports:
+                      type: array
+                      items:
+                        type: object
+                        required: [name, containerPort]
+                        properties:
+                          name:
+                            type: string
+                          containerPort:
+                            type: integer
+                          protocol:
+                            type: string
+                            default: TCP
+                    mcpEndpoint:
+                      type: object
+                      properties:
+                        portName:
+                          type: string
+                        path:
+                          type: string
+                          default: /mcp
+                    env:
+                      type: array
+                      items:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                    resources:
+                      type: object
+                      x-kubernetes-preserve-unknown-fields: true
+                    storage:
+                      type: array
+                      items:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                toolOverrides:
+                  type: array
+                  items:
+                    type: object
+                    required: [name, readOnly]
+                    properties:
+                      name:
+                        type: string
+                      readOnly:
+                        type: boolean
+                      taskSupport:
+                        type: string
+                        enum: [forbidden, optional, required]
+                skillRefs:
+                  type: array
+                  items:
+                    type: object
+                    required: [name]
+                    properties:
+                      name:
+                        type: string
+                      key:
+                        type: string
+                webExposures:
+                  type: array
+                  items:
+                    type: object
+                    required: [name, portName, hostname, paths]
+                    properties:
+                      name:
+                        type: string
+                      portName:
+                        type: string
+                      hostname:
+                        type: string
+                      paths:
+                        type: array
+                        items:
+                          type: string
+                      gatewayRef:
+                        type: object
+                        properties:
+                          name:
+                            type: string
+                          namespace:
+                            type: string
+                          sectionName:
+                            type: string
+                      annotations:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      publicBaseUrlEnv:
+                        type: string
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                observedGeneration:
+                  type: integer
+                  format: int64
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    required: [type, status]
+                    properties:
+                      type:
+                        type: string
+                      status:
+                        type: string
+                      reason:
+                        type: string
+                      message:
+                        type: string
+                      lastTransitionTime:
+                        type: string
+                        format: date-time

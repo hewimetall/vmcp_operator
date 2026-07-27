@@ -1,0 +1,68 @@
+{{- if gt (int .Values.replicaCount) 1 }}
+{{- fail "replicaCount must be 1 in MVP (no HA/peering yet)" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "vmcp-operator.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vmcp-operator.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "vmcp-operator.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "vmcp-operator.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "vmcp-operator.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: operator
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - --watch-namespaces={{ include "vmcp-operator.watchNamespaces" . }}
+          env:
+            - name: PYTHON_LAZY_IMPORTS
+              value: {{ .Values.operator.lazyImports | quote }}
+            - name: VMCP_OPERATOR_LOG_LEVEL
+              value: {{ .Values.operator.logLevel | quote }}
+            - name: VMCP_OPERATOR_ALLOWED_IMAGE_PREFIXES
+              value: {{ include "vmcp-operator.allowedImagePrefixes" . | quote }}
+            - name: VMCP_OPERATOR_WATCH_NAMESPACES
+              value: {{ include "vmcp-operator.watchNamespaces" . | quote }}
+            - name: VMCP_OPERATOR_DASHBOARD_ENABLED
+              value: {{ .Values.dashboard.enabled | quote }}
+            - name: VMCP_OPERATOR_DASHBOARD_PORT
+              value: {{ .Values.dashboard.port | quote }}
+            {{- if .Values.dashboard.enabled }}
+            - name: VMCP_OPERATOR_DASHBOARD_AUTH_SECRET
+              value: {{ .Values.dashboard.authSecretRef.name | quote }}
+            - name: VMCP_OPERATOR_DASHBOARD_AUTH_USERNAME_KEY
+              value: {{ .Values.dashboard.authSecretRef.usernameKey | quote }}
+            - name: VMCP_OPERATOR_DASHBOARD_AUTH_PASSWORD_KEY
+              value: {{ .Values.dashboard.authSecretRef.passwordKey | quote }}
+            {{- end }}
+          ports:
+            {{- if .Values.dashboard.enabled }}
+            - name: dashboard
+              containerPort: {{ .Values.dashboard.port }}
+              protocol: TCP
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]

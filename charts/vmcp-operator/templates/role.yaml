@@ -1,0 +1,28 @@
+{{- if .Values.rbac.create }}
+{{- range $ns := .Values.watchNamespaces }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "vmcp-operator.fullname" $ }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "vmcp-operator.labels" $ | nindent 4 }}
+rules:
+  - apiGroups: ["vmcp.io"]
+    resources: ["vmcpgateways", "vmcpgateways/status", "vmcpmcpservers", "vmcpmcpservers/status"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["services", "configmaps", "secrets", "persistentvolumeclaims", "serviceaccounts", "pods"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["httproutes"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["events.k8s.io"]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+{{- end }}
+{{- end }}
