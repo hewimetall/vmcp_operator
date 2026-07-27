@@ -122,10 +122,20 @@ async def reconcile_mcp(
     finalizers = tuple(meta.get("finalizers") or [])
     async with _lock_for(mcp.gateway_key):
         gateway = await runtime.get_gateway(mcp.gateway_key)
+        unregistered = False
+        if deleting:
+            if runtime.unregister_upstream is not None:
+                unregistered = await runtime.unregister_upstream(
+                    mcp.gateway_key,
+                    mcp.name,
+                )
+            else:
+                # Tests / dry-run runtime: treat unregister as successful.
+                unregistered = True
         decision = plan_mcp_finalizer(
             existing=finalizers,
             deleting=deleting,
-            unregistered_from_vmcp=deleting,  # unregister step lands with live API client
+            unregistered_from_vmcp=unregistered,
         )
         if decision.block_delete:
             return {

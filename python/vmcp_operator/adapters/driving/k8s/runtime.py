@@ -30,6 +30,7 @@ class EmptySkillLoader:
 
 ListMcps = Callable[[GatewayKey], Awaitable[list[McpServerDesired]]]
 GetGateway = Callable[[GatewayKey], Awaitable[GatewayDesired | None]]
+UnregisterFn = Callable[[GatewayKey, str], Awaitable[bool]]
 
 
 @dataclass
@@ -38,6 +39,7 @@ class OperatorRuntime:
     mcp_reconcile: McpReconcile
     list_mcps: ListMcps
     get_gateway: GetGateway
+    unregister_upstream: UnregisterFn | None = None
     pending: set[str] = field(default_factory=set)
 
     def enqueue(self, key: GatewayKey) -> None:

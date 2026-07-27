@@ -167,6 +167,27 @@ async def test_mcp_finalize_on_delete(runtime: OperatorRuntime) -> None:
 
 
 @pytest.mark.asyncio
+async def test_mcp_delete_blocks_when_unregister_fails(runtime: OperatorRuntime) -> None:
+    async def _fail(key, name: str) -> bool:
+        return False
+
+    runtime.unregister_upstream = _fail
+    result = await handlers.reconcile_mcp(
+        namespace="team-a",
+        name="docs",
+        spec={
+            "gatewayRef": {"name": "main"},
+            "source": {"type": "RemoteHttp", "url": "https://docs.example/mcp"},
+        },
+        meta={
+            "deletionTimestamp": "2026-01-01T00:00:00Z",
+            "finalizers": ["vmcp.io/unregister-before-gc"],
+        },
+    )
+    assert result["phase"] == "Deleting"
+
+
+@pytest.mark.asyncio
 async def test_empty_skill_loader_and_default_runtime() -> None:
     set_runtime(None)
     loader = EmptySkillLoader()

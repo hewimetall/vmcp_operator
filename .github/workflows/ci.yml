@@ -54,3 +54,8 @@ jobs:
           if rg -n 'containerPort: 8080' -n /tmp/out.yaml >/dev/null; then
             echo "operator dashboard port present"
           fi
+          test -f charts/vmcp-operator/crds/vmcpgateway.yaml
+          test -f charts/vmcp-operator/crds/vmcpmcpserver.yaml
+          mkdir -p dist/charts
+          helm package charts/vmcp-operator --destination dist/charts
+          ls dist/charts/*.tgz

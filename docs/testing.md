@@ -35,6 +35,15 @@ In constrained VMs use KWOK for API-level concurrency proof.
 - `PlanSkillsSync` / finalizer helpers (admin-owned skills preserved; unregister-before-GC)
 - `Kr8sServerSideApplier` + `ServerSideApply` conflict retry
 
+## Helm package (local OCI-ready artifact)
+
+```bash
+make helm-package
+# → dist/charts/vmcp-operator-0.1.0.tgz
+# Push when registry credentials are available:
+# helm push dist/charts/vmcp-operator-0.1.0.tgz oci://$REGISTRY/charts
+```
+
 ## KWOK API e2e (no kubelet)
 
 ```bash
