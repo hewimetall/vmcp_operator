@@ -4,11 +4,11 @@ import sys
 
 import pytest
 
-from vmcp_operator.adapters.driven.registry.engine import (
-    RegistryEngine,
+from vmcp_operator.adapters.driven.registry.engine import RegistryEngine
+from vmcp_operator.domain.models.artifacts import (
     SkillArgDesired,
     SkillDesired,
-    ToolOverrideDesired,
+    ToolOverrideArtifact,
     UpstreamArtifactsDesired,
     UpstreamDesired,
 )
@@ -20,7 +20,7 @@ def test_free_threading_still_enabled() -> None:
 
 def test_render_registry_sorted_http() -> None:
     engine = RegistryEngine()
-    out = engine.render_registry(
+    text, digest = engine.render_registry(
         [
             UpstreamDesired(
                 name="tavily",
@@ -34,10 +34,10 @@ def test_render_registry_sorted_http() -> None:
             ),
         ]
     )
-    assert '"name": "context7"' in out.text
-    assert '"transport": "http"' in out.text
-    assert "${CONTEXT7_API_KEY}" in out.text
-    assert out.sha256
+    assert '"name": "context7"' in text
+    assert '"transport": "http"' in text
+    assert "${CONTEXT7_API_KEY}" in text
+    assert digest
 
 
 def test_render_bundle_includes_sidecar_and_skill() -> None:
@@ -51,7 +51,7 @@ def test_render_bundle_includes_sidecar_and_skill() -> None:
                     description="docs",
                 ),
                 tool_overrides=(
-                    ToolOverrideDesired(
+                    ToolOverrideArtifact(
                         name="get_model",
                         read_only=True,
                         task_support="forbidden",
