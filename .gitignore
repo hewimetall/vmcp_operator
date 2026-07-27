@@ -9,3 +9,8 @@ target/
 dist/
 *.egg-info/
 .DS_Store
+*.so
+*.pyd
+*.dll
+.mypy_cache/
+.uv/
