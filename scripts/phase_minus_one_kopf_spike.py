@@ -100,6 +100,7 @@ async def configure(settings: kopf.OperatorSettings, **_: object) -> None:
 
 @kopf.on.create("vmcp.io", "v1alpha1", "vmcpgateways")
 @kopf.on.update("vmcp.io", "v1alpha1", "vmcpgateways")
+@kopf.on.resume("vmcp.io", "v1alpha1", "vmcpgateways")
 async def on_gateway(name: str, **_: object) -> None:
     SEEN["VmcpGateway"].add(name)
     if SEEN["VmcpGateway"] and SEEN["VmcpMcpServer"]:
@@ -108,6 +109,7 @@ async def on_gateway(name: str, **_: object) -> None:
 
 @kopf.on.create("vmcp.io", "v1alpha1", "vmcpmcpservers")
 @kopf.on.update("vmcp.io", "v1alpha1", "vmcpmcpservers")
+@kopf.on.resume("vmcp.io", "v1alpha1", "vmcpmcpservers")
 async def on_mcp(name: str, **_: object) -> None:
     SEEN["VmcpMcpServer"].add(name)
     if SEEN["VmcpGateway"] and SEEN["VmcpMcpServer"]:
