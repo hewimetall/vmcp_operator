@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import runpy
 import sys
+from unittest.mock import patch
 
 import pytest
 
@@ -19,13 +19,31 @@ def test_sha256_boundary_accepts_python_bytes() -> None:
     )
 
 
-def test_module_execution_delegates_to_main() -> None:
-    with pytest.raises(SystemExit, match="runtime is not wired yet"):
-        runpy.run_module("vmcp_operator.__main__", run_name="__main__")
-
-
-def test_unwired_entrypoint_fails_explicitly() -> None:
+def test_main_wires_and_runs_kopf() -> None:
     from vmcp_operator.__main__ import main
 
-    with pytest.raises(SystemExit, match="runtime is not wired yet"):
+    with (
+        patch("vmcp_operator.wiring.wire") as wire,
+        patch("kopf.run") as run,
+    ):
         main()
+        wire.assert_called_once()
+        run.assert_called_once_with(clusterwide=False)
+
+
+def test_main_rejects_gil_runtime() -> None:
+    from vmcp_operator.__main__ import main
+
+    with (
+        patch("sys._is_gil_enabled", return_value=True),
+        pytest.raises(SystemExit, match="free-threaded"),
+    ):
+        main()
+
+
+def test_main_module_guard_invokes_main() -> None:
+    import vmcp_operator.__main__ as main_mod
+
+    with patch.object(main_mod, "main") as mocked:
+        main_mod.main()
+        mocked.assert_called_once()

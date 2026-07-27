@@ -2,14 +2,23 @@
 
 from __future__ import annotations
 
+import os
+import sys
+
 
 def main() -> None:
-    """Start the operator.
+    """Start the operator with eager handler wiring."""
+    os.environ.setdefault("PYTHON_LAZY_IMPORTS", "normal")
+    if sys._is_gil_enabled():
+        raise SystemExit("vmcp-operator requires free-threaded CPython (GIL is enabled)")
 
-    Runtime wiring lands after the Python 3.15t compatibility gate. Keeping
-    this entrypoint import-light prevents accidental eager framework startup.
-    """
-    raise SystemExit("vmcp-operator runtime is not wired yet")
+    from vmcp_operator.wiring import wire
+
+    wire()
+
+    import kopf
+
+    kopf.run(clusterwide=False)
 
 
 if __name__ == "__main__":
