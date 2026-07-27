@@ -35,6 +35,16 @@ In constrained VMs use KWOK for API-level concurrency proof.
 - `PlanSkillsSync` / finalizer helpers (admin-owned skills preserved; unregister-before-GC)
 - `Kr8sServerSideApplier` + `ServerSideApply` conflict retry
 
+## KWOK API e2e (no kubelet)
+
+```bash
+kwokctl get kubeconfig --name vmcp-spike > /tmp/kwok.kubeconfig
+export KUBECONFIG=/tmp/kwok.kubeconfig
+.venv/bin/python scripts/kwok_e2e_apply.py
+# Applies resurche Gateway artifacts (ConfigMap/Service/Deployment/PVC).
+# HTTPRoutes are skipped unless Gateway API CRDs are installed.
+```
+
 ## Profiles
 
 Apply after operator install + secrets:
