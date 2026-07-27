@@ -48,3 +48,11 @@ def test_map_rejects_unknown_source_type() -> None:
                 "source": {"type": "Stdio"},
             },
         )
+
+
+def test_map_skill_refs() -> None:
+    gw_doc = yaml.safe_load((ROOT / "resurche" / "gateway.yaml").read_text())
+    gw_doc["spec"]["skillRefs"] = [{"name": "research-docs", "key": "skill.yaml"}]
+    gateway = map_gateway("team-a", "resurche", gw_doc["spec"])
+    assert gateway.skill_refs[0].name == "research-docs"
+    assert gateway.skill_refs[0].key == "skill.yaml"
