@@ -1,0 +1,10 @@
+name: architect_overview
+description: |
+  Orient an agent on the current C4 model and ADR set.
+arguments:
+  - name: focus
+    required: true
+    description: Area of the architecture to inspect
+template: |
+  Call architect-c4 read-only tools for focus={{focus}}.
+  Start with get_model and list_adrs via query_graphql.

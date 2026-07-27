@@ -1,0 +1,23 @@
+apiVersion: vmcp.io/v1alpha1
+kind: VmcpMcpServer
+metadata:
+  name: mcp-gittree
+  namespace: team-a
+  labels:
+    vmcp.io/profile: code
+  annotations:
+    vmcp.io/blocker: "SourceContractMissing: mcp-gittree is stdio-only without HTTP image"
+spec:
+  enabled: false
+  description: Blocked until upstream ships Streamable HTTP mode + image
+  gatewayRef:
+    name: code
+  source:
+    type: ContainerImage
+    image: registry.example.com/ai/mcp-gittree:pending
+    ports:
+      - name: http
+        containerPort: 8080
+    mcpEndpoint:
+      portName: http
+      path: /mcp
