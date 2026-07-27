@@ -1,0 +1,44 @@
+apiVersion: vmcp.io/v1alpha1
+kind: VmcpMcpServer
+metadata:
+  name: architect-c4
+  namespace: team-a
+  labels:
+    vmcp.io/profile: code
+spec:
+  enabled: true
+  description: Architect C4 model tools + viewer
+  gatewayRef:
+    name: code
+  source:
+    type: ContainerImage
+    image: registry.example.com/ai/architect-c4:0.1.0
+    ports:
+      - name: http
+        containerPort: 8766
+    mcpEndpoint:
+      portName: http
+      path: /mcp
+  toolOverrides:
+    - name: get_model
+      readOnly: true
+      taskSupport: forbidden
+    - name: list_adrs
+      readOnly: true
+      taskSupport: forbidden
+    - name: upsert_element
+      readOnly: false
+      taskSupport: forbidden
+    - name: upsert_relationship
+      readOnly: false
+      taskSupport: forbidden
+  webExposures:
+    - name: viewer
+      portName: http
+      hostname: architect.example.com
+      paths: ["/", "/adrs", "/flows", "/view", "/wasm"]
+      publicBaseUrlEnv: ARCHITECT_C4_PUBLIC_BASE
+      gatewayRef:
+        name: kgateway
+        namespace: gateway-system
+        sectionName: https

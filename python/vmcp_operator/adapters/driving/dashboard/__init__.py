@@ -1,0 +1,1 @@
+"""Fleet dashboard HTTP adapter."""

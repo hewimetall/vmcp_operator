@@ -1,0 +1,15 @@
+name: research_docs
+description: |
+  Research a library/topic using Context7 + Tavily read-only tools.
+arguments:
+  - name: library
+    required: true
+    description: Library or product name
+  - name: question
+    required: true
+    description: What to find
+template: |
+  Use context7 and tavily read-only tools.
+  Library: {{library}}
+  Question: {{question}}
+  Prefer query_graphql over raw tool names.

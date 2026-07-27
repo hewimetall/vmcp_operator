@@ -1,0 +1,23 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/vmcp-op-core",
+    "crates/vmcp-op-pyo3",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+license = "MIT"
+repository = "https://github.com/hewimetall/vmcp_operator"
+
+[workspace.dependencies]
+pyo3 = { version = "0.29.0", features = ["abi3t-py315"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+sha2 = "0.10"
+thiserror = "2"
+# Pinned exact vmcp main SHA from the contract audit (do not float).
+vmcp-registry = { git = "https://github.com/hewimetall/vmcp", rev = "f6664e6be8d6926b7bd81683eb47981736d642c3" }

@@ -1,0 +1,30 @@
+vmcp-operator {{ .Chart.Version }} installed into {{ .Release.Namespace }}.
+
+This chart installs ONLY:
+  - CRDs (VmcpGateway, VmcpMcpServer)
+  - RBAC scoped to watchNamespaces={{ include "vmcp-operator.watchNamespaces" . }}
+  - singleton operator Deployment
+  {{- if .Values.dashboard.enabled }}
+  - dashboard Service on port {{ .Values.dashboard.port }}
+  {{- end }}
+
+It does NOT create vmcp Deployments, MCP workloads, or bootstrap Jobs.
+Apply VmcpGateway / VmcpMcpServer CRs (or profile bundles) after install.
+
+Watch namespaces (explicit allowlist):
+{{- range .Values.watchNamespaces }}
+  - {{ . }}
+{{- end }}
+
+Allowed image prefixes:
+{{- range .Values.policy.allowedImagePrefixes }}
+  - {{ . }}
+{{- end }}
+
+Dashboard:
+{{- if .Values.dashboard.enabled }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "vmcp-operator.fullname" . }} {{ .Values.dashboard.port }}:{{ .Values.dashboard.port }}
+  Auth secret: {{ .Values.dashboard.authSecretRef.name }}
+{{- else }}
+  disabled
+{{- end }}

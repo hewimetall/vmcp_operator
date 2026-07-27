@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+target/
+/dist/
+*.egg-info/
+!python/vmcp_operator/static/vendor/**/dist/
+.DS_Store
+*.so
+*.pyd
+*.dll
+.mypy_cache/
+.uv/

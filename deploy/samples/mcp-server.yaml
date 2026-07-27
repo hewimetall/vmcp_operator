@@ -1,0 +1,20 @@
+apiVersion: vmcp.io/v1alpha1
+kind: VmcpMcpServer
+metadata:
+  name: docs
+  namespace: team-a
+spec:
+  enabled: true
+  description: Example hosted Streamable HTTP MCP
+  gatewayRef:
+    name: main
+  source:
+    type: RemoteHttp
+    url: https://docs.example.com/mcp
+    bearerSecretRef:
+      name: docs-bearer
+      key: token
+  toolOverrides:
+    - name: search
+      readOnly: true
+      taskSupport: forbidden

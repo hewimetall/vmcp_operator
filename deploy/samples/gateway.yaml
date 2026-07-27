@@ -1,0 +1,25 @@
+apiVersion: vmcp.io/v1alpha1
+kind: VmcpGateway
+metadata:
+  name: main
+  namespace: team-a
+spec:
+  image: registry.example.com/ai/vmcp:0.1.0
+  adminTokenSecretRef:
+    name: main-admin-tokens
+  masterPasswordSecretRef:
+    name: main-admin-password
+    key: password
+  publicRoute:
+    hostname: main.example.com
+    gatewayRef:
+      name: kgateway
+      namespace: gateway-system
+      sectionName: https
+  persistence:
+    size: 5Gi
+    reclaimPolicy: Retain
+  tasks:
+    enabled: false
+  proxy:
+    enabled: false

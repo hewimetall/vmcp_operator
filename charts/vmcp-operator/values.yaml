@@ -1,0 +1,56 @@
+# Install-time parameters. Production values are supplied at helm install/upgrade.
+image:
+  repository: registry.example.com/vmcp-operator
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# Explicit namespace allowlist. Cluster-wide watch is forbidden in MVP.
+watchNamespaces:
+  - team-a
+  - team-b
+  - shared
+
+# Fixed in MVP. Do not raise above 1 until Lease/peering is implemented.
+replicaCount: 1
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+serviceAccount:
+  create: true
+  name: ""
+
+rbac:
+  create: true
+
+policy:
+  # Non-empty OCI repository prefix allowlist. Validated as parsed OCI refs.
+  allowedImagePrefixes:
+    - registry.example.com/ai
+
+dashboard:
+  enabled: true
+  port: 8080
+  authSecretRef:
+    name: vmcp-operator-dashboard-auth
+    usernameKey: username
+    passwordKey: password
+  route:
+    enabled: false
+    hostname: ""
+    gatewayRef:
+      name: ""
+      namespace: ""
+      sectionName: ""
+
+operator:
+  logLevel: INFO
+  # PYTHON_LAZY_IMPORTS must stay normal so eager Kopf handler wiring registers.
+  lazyImports: normal

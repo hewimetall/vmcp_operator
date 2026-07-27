@@ -1,0 +1,21 @@
+apiVersion: vmcp.io/v1alpha1
+kind: VmcpMcpServer
+metadata:
+  name: stepik
+  namespace: team-a
+  labels:
+    vmcp.io/profile: other
+spec:
+  enabled: true
+  description: Stepik MCP HTTP service with persistent /data
+  gatewayRef:
+    name: other
+  source:
+    type: ContainerImage
+    image: registry.example.com/ai/mcp-stepik:0.1.0
+    ports:
+      - name: http
+        containerPort: 8000
+    mcpEndpoint:
+      portName: http
+      path: /mcp

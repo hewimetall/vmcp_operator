@@ -1,0 +1,25 @@
+apiVersion: vmcp.io/v1alpha1
+kind: VmcpMcpServer
+metadata:
+  name: tavily
+  namespace: team-a
+  labels:
+    vmcp.io/profile: resurche
+spec:
+  enabled: true
+  description: Tavily search/extract/crawl (RemoteHttp)
+  gatewayRef:
+    name: resurche
+  source:
+    type: RemoteHttp
+    url: https://mcp.tavily.com/mcp
+    bearerSecretRef:
+      name: resurche-tavily
+      key: token
+  toolOverrides:
+    - name: tavily_search
+      readOnly: true
+      taskSupport: forbidden
+    - name: tavily_extract
+      readOnly: true
+      taskSupport: forbidden

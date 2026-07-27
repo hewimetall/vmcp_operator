@@ -1,0 +1,28 @@
+apiVersion: vmcp.io/v1alpha1
+kind: VmcpMcpServer
+metadata:
+  name: presentation
+  namespace: team-a
+  labels:
+    vmcp.io/profile: other
+  annotations:
+    vmcp.io/blocker: "RuntimeUnavailable: managed presentation needs Docker/bollard builder runtime"
+spec:
+  enabled: false
+  description: Blocked managed mode without Docker runtime; use RemoteHttp when available
+  gatewayRef:
+    name: other
+  source:
+    type: ContainerImage
+    image: registry.example.com/ai/presentation-mcp:pending
+    ports:
+      - name: http
+        containerPort: 8080
+    mcpEndpoint:
+      portName: http
+      path: /mcp
+  webExposures:
+    - name: view
+      portName: http
+      hostname: presentation.example.com
+      paths: ["/view"]

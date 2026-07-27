@@ -1,0 +1,22 @@
+apiVersion: vmcp.io/v1alpha1
+kind: VmcpMcpServer
+metadata:
+  name: serpapi
+  namespace: team-a
+  labels:
+    vmcp.io/profile: resurche
+spec:
+  enabled: true
+  description: SerpAPI search (RemoteHttp)
+  gatewayRef:
+    name: resurche
+  source:
+    type: RemoteHttp
+    url: https://mcp.serpapi.com/mcp
+    bearerSecretRef:
+      name: resurche-serpapi
+      key: token
+  toolOverrides:
+    - name: search
+      readOnly: true
+      taskSupport: forbidden

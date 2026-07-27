@@ -1,0 +1,23 @@
+apiVersion: vmcp.io/v1alpha1
+kind: VmcpMcpServer
+metadata:
+  name: sourcegraph-proxy
+  namespace: team-a
+  labels:
+    vmcp.io/profile: resurche
+  annotations:
+    vmcp.io/blocker: "Requires org-registry HTTP proxy image exposing /mcp + health"
+spec:
+  enabled: false
+  description: Sourcegraph via managed HTTP proxy ContainerImage (blocked until image contract)
+  gatewayRef:
+    name: resurche
+  source:
+    type: ContainerImage
+    image: registry.example.com/ai/sourcegraph-mcp-proxy:0.1.0
+    ports:
+      - name: http
+        containerPort: 8080
+    mcpEndpoint:
+      portName: http
+      path: /mcp

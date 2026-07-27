@@ -1,0 +1,34 @@
+{{- if and .Values.dashboard.enabled .Values.dashboard.route.enabled }}
+{{- if not .Values.dashboard.route.hostname }}
+{{- fail "dashboard.route.hostname is required when dashboard.route.enabled=true" }}
+{{- end }}
+{{- if not .Values.dashboard.route.gatewayRef.name }}
+{{- fail "dashboard.route.gatewayRef.name is required when dashboard.route.enabled=true" }}
+{{- end }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ include "vmcp-operator.fullname" . }}-dashboard
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "vmcp-operator.labels" . | nindent 4 }}
+spec:
+  parentRefs:
+    - name: {{ .Values.dashboard.route.gatewayRef.name }}
+      {{- with .Values.dashboard.route.gatewayRef.namespace }}
+      namespace: {{ . }}
+      {{- end }}
+      {{- with .Values.dashboard.route.gatewayRef.sectionName }}
+      sectionName: {{ . }}
+      {{- end }}
+  hostnames:
+    - {{ .Values.dashboard.route.hostname | quote }}
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: {{ include "vmcp-operator.fullname" . }}
+          port: {{ .Values.dashboard.port }}
+{{- end }}

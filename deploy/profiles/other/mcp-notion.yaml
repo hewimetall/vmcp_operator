@@ -1,0 +1,17 @@
+apiVersion: vmcp.io/v1alpha1
+kind: VmcpMcpServer
+metadata:
+  name: notion
+  namespace: team-a
+  labels:
+    vmcp.io/profile: other
+  annotations:
+    vmcp.io/blocker: "SourceContractMissing: hosted Notion is OAuth-only / headless-unfriendly"
+spec:
+  enabled: false
+  description: Blocked until an approved HTTP proxy/self-host strategy exists
+  gatewayRef:
+    name: other
+  source:
+    type: RemoteHttp
+    url: https://notion.example.com/mcp

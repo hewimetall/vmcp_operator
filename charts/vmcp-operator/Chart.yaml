@@ -1,0 +1,13 @@
+apiVersion: v2
+name: vmcp-operator
+description: Kubernetes operator for multi-instance vmcp gateways
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - vmcp
+  - mcp
+  - operator
+maintainers:
+  - name: hewimetall
+home: https://github.com/hewimetall/vmcp_operator
