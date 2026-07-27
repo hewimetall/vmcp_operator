@@ -39,7 +39,7 @@ def test_map_architect_container_and_web_exposure() -> None:
 
 
 def test_map_rejects_unknown_source_type() -> None:
-    with pytest.raises(ValueError, match="unsupported source.type"):
+    with pytest.raises(ValueError, match=r"unsupported source\.type"):
         map_mcp(
             "team-a",
             "x",

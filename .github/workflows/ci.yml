@@ -1,0 +1,56 @@
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.15t"
+      - name: Sync and build extension
+        run: |
+          uv sync --extra dev
+          uv run maturin develop
+      - name: Pytest coverage gate
+        run: uv run pytest --cov=vmcp_operator --cov-report=term-missing
+      - name: Ruff
+        run: uv run ruff check python tests
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy, llvm-tools-preview
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Format / clippy / coverage
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy -p vmcp-op-core -p vmcp-op-pyo3 -- -D warnings
+          cargo llvm-cov -p vmcp-op-core --fail-under-lines 93
+
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v4.2.3
+      - name: Lint and template
+        run: |
+          helm lint charts/vmcp-operator
+          helm template test charts/vmcp-operator --namespace vmcp-system >/tmp/out.yaml
+          ! rg -n 'kind: Deployment' /tmp/out.yaml | rg -i 'vmcp[^-]|name: vmcp$' || true
+          # Chart must contain operator Deployment but never a bare vmcp app Deployment template.
+          rg -n 'app.kubernetes.io/component: operator' /tmp/out.yaml
+          if rg -n 'containerPort: 8080' -n /tmp/out.yaml >/dev/null; then
+            echo "operator dashboard port present"
+          fi

@@ -146,6 +146,17 @@ async def test_dashboard_index_and_bad_origin(client: TestClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_rate_limiter_expires_old_hits() -> None:
+    limiter = RateLimiter(limit=1, window=0.01)
+    assert limiter.allow("a") is True
+    assert limiter.allow("a") is False
+    import time
+
+    time.sleep(0.02)
+    assert limiter.allow("a") is True
+
+
+@pytest.mark.asyncio
 async def test_dashboard_validation_errors(client: TestClient) -> None:
     headers = _auth_header()
     resp = await client.post(
@@ -167,6 +178,11 @@ async def test_dashboard_validation_errors(client: TestClient) -> None:
     )
     assert resp.status == 400
     resp = await client.get("/api/environments", headers=_auth_header("admin", "wrong"))
+    assert resp.status == 401
+    resp = await client.get(
+        "/api/environments",
+        headers={"Authorization": "Basic !!!"},
+    )
     assert resp.status == 401
     resp = await client.get("/static/dashboard.css", headers=headers)
     assert resp.status == 200
