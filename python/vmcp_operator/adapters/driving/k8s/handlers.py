@@ -7,6 +7,7 @@ from typing import Any
 
 import kopf
 
+from vmcp_operator.adapters.driving.k8s.mapping import map_gateway, map_mcp
 from vmcp_operator.domain.models.gateway import GatewayKey
 
 LOGGER = logging.getLogger(__name__)
@@ -43,11 +44,10 @@ async def reconcile_gateway(
     spec: dict[str, Any],
     **_: Any,
 ) -> dict[str, str]:
-    key = GatewayKey(namespace=namespace, name=name)
-    async with _lock_for(key):
-        LOGGER.info("reconcile gateway %s image=%s", key.as_str(), spec.get("image"))
-        # Full SSA/apply lands with driven adapters; handler registration is the Phase-4 gate.
-        return {"phase": "Observed", "gateway": key.as_str()}
+    gateway = map_gateway(namespace, name, spec)
+    async with _lock_for(gateway.key):
+        LOGGER.info("reconcile gateway %s image=%s", gateway.key.as_str(), gateway.image)
+        return {"phase": "Observed", "gateway": gateway.key.as_str()}
 
 
 @kopf.on.create("vmcp.io", "v1alpha1", "vmcpmcpservers")
@@ -59,14 +59,13 @@ async def reconcile_mcp(
     spec: dict[str, Any],
     **_: Any,
 ) -> dict[str, str]:
-    gateway_name = spec.get("gatewayRef", {}).get("name", "")
-    key = GatewayKey(namespace=namespace, name=gateway_name or "unknown")
-    async with _lock_for(key):
+    mcp = map_mcp(namespace, name, spec)
+    async with _lock_for(mcp.gateway_key):
         LOGGER.info(
             "reconcile mcp %s/%s -> gateway %s source=%s",
             namespace,
             name,
-            key.as_str(),
-            (spec.get("source") or {}).get("type"),
+            mcp.gateway_key.as_str(),
+            type(mcp.source).__name__,
         )
-        return {"phase": "Observed", "gateway": key.as_str()}
+        return {"phase": "Observed", "gateway": mcp.gateway_key.as_str()}
