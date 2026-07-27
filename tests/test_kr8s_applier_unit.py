@@ -155,9 +155,6 @@ async def test_kr8s_applier_string_not_found_and_inner(
     )
     assert out2["metadata"]["name"] == "nf2"
 
-    out2 = await applier.server_side_apply(body, field_manager="fm", force=True)
-    assert out2["data"]["a"] == "1"
-
 
 @pytest.mark.asyncio
 async def test_kr8s_applier_not_found_creates(

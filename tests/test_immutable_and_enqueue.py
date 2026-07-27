@@ -5,9 +5,9 @@ from vmcp_operator.adapters.driving.k8s.enqueue import (
     should_enqueue_child,
 )
 from vmcp_operator.domain.usecases.immutable import (
+    _size_bytes,
     check_gateway_immutables,
     check_mcp_immutables,
-    _size_bytes,
 )
 
 
