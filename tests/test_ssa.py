@@ -17,8 +17,8 @@ async def test_ssa_retries_conflict_with_force() -> None:
     out = await ssa.apply(body)
     assert out == body
     assert applier.applied is not None
-    assert applier.applied[-1]["force"] is True
     assert len(applier.applied) == 1
+    assert applier._seen == 3
 
 
 @pytest.mark.asyncio

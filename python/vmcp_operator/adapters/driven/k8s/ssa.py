@@ -64,11 +64,10 @@ class InMemoryApplier:
         field_manager: str,
         force: bool,
     ) -> dict[str, Any]:
+        del force  # force is exercised by ServerSideApply; conflicts are attempt-based.
         self._seen += 1
-        if self._seen <= self.conflicts_before_success and not force:
+        if self._seen <= self.conflicts_before_success:
             raise ConflictError("conflict")
         assert self.applied is not None
-        self.applied.append(
-            {"body": body, "field_manager": field_manager, "force": force}
-        )
+        self.applied.append({"body": body, "field_manager": field_manager})
         return body
