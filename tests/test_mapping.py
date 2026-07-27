@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
 
 from vmcp_operator.adapters.driving.k8s.mapping import map_gateway, map_mcp
@@ -35,3 +36,15 @@ def test_map_architect_container_and_web_exposure() -> None:
     assert isinstance(mcp.source, ContainerImageSource)
     assert mcp.source.mcp_endpoint.port_name == "http"
     assert mcp.web_exposures[0].public_base_url_env == "ARCHITECT_C4_PUBLIC_BASE"
+
+
+def test_map_rejects_unknown_source_type() -> None:
+    with pytest.raises(ValueError, match="unsupported source.type"):
+        map_mcp(
+            "team-a",
+            "x",
+            {
+                "gatewayRef": {"name": "main"},
+                "source": {"type": "Stdio"},
+            },
+        )
