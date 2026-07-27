@@ -6,8 +6,9 @@ __pycache__/
 .coverage
 htmlcov/
 target/
-dist/
+/dist/
 *.egg-info/
+!python/vmcp_operator/static/vendor/**/dist/
 .DS_Store
 *.so
 *.pyd
