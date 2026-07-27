@@ -45,3 +45,6 @@ helm-push-local:
 
 spike:
 	PYTHON_LAZY_IMPORTS=normal $(PYTHON) scripts/phase_minus_one_kopf_spike.py
+
+phase5-e2e:
+	$(PYTHON) scripts/phase5_kwok_e2e.py

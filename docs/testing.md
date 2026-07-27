@@ -49,15 +49,21 @@ make helm-push-local
 # helm push dist/charts/vmcp-operator-0.1.0.tgz oci://$REGISTRY/charts
 ```
 
-## KWOK API e2e (no kubelet)
+## KWOK / API e2e (no kubelet)
 
 ```bash
 kwokctl get kubeconfig --name vmcp-spike > /tmp/kwok.kubeconfig
 export KUBECONFIG=/tmp/kwok.kubeconfig
 .venv/bin/python scripts/kwok_e2e_apply.py
 # Applies resurche Gateway artifacts (ConfigMap/Service/Deployment/PVC).
-# HTTPRoutes are skipped unless Gateway API CRDs are installed.
+
+# Phase 5 acceptance (multi-gateway isolation, reconnect, delete, dashboard):
+.venv/bin/python scripts/phase5_kwok_e2e.py
+# Also covered in-memory by tests/test_phase5_e2e.py in CI.
 ```
+
+Kind/k3s full kubelet e2e remains environment-dependent (nested cgroup v2 must
+reach multi-user.target). This VM cannot boot `kindest/node` successfully.
 
 ## Profiles
 
