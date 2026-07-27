@@ -101,7 +101,7 @@ async def test_kr8s_applier_requires_name_and_fallback_patch(
         fake_api,
     )
     applier = Kr8sServerSideApplier(api=object())
-    with pytest.raises(ValueError, match="metadata.name"):
+    with pytest.raises(ValueError, match=r"metadata\.name"):
         await applier.server_side_apply(
             {"apiVersion": "v1", "kind": "ConfigMap", "metadata": {}},
             field_manager="fm",
