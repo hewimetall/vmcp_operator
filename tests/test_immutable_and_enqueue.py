@@ -7,6 +7,7 @@ from vmcp_operator.adapters.driving.k8s.enqueue import (
 from vmcp_operator.domain.usecases.immutable import (
     check_gateway_immutables,
     check_mcp_immutables,
+    _size_bytes,
 )
 
 
@@ -41,6 +42,7 @@ def test_immutable_gateway_and_mcp_rules() -> None:
     )
     assert mcp[0].field == "gatewayRef.name"
     assert check_mcp_immutables({"gatewayRef": {"name": "a"}}, {"gatewayRef": {"name": "a"}}) == ()
+    assert _size_bytes("12") == 12
 
 
 def test_enqueue_from_labels_and_annotation() -> None:
@@ -49,6 +51,7 @@ def test_enqueue_from_labels_and_annotation() -> None:
     assert key.as_str() == "team-a/main"
     assert gateway_key_from_labels("team-a", {}) is None
     assert gateway_key_from_labels("team-a", None) is None
+    assert gateway_key_from_labels("team-a", {"vmcp.io/gateway": ""}) is None
 
     keyed = should_enqueue_child(
         {

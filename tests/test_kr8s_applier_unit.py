@@ -83,6 +83,78 @@ async def test_kr8s_applier_create_and_conflict_retry(monkeypatch: pytest.Monkey
     with pytest.raises(ConflictError):
         await applier.server_side_apply(body, field_manager="fm", force=False)
 
+
+@pytest.mark.asyncio
+async def test_kr8s_applier_string_not_found_and_inner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_api() -> object:
+        return object()
+
+    monkeypatch.setattr(
+        "vmcp_operator.adapters.driven.k8s.kr8s_applier.kr8s.asyncio.api",
+        fake_api,
+    )
+
+    class StringNotFound(FakeObj):
+        async def patch(self, body: dict[str, Any], **kwargs: Any) -> None:
+            if kwargs.get("type") == "apply":
+                raise RuntimeError("object not found")
+            raise RuntimeError("not found again")
+
+    def nf_class(**_kwargs: Any):
+        def ctor(body: dict[str, Any], api: Any = None) -> StringNotFound:
+            obj = StringNotFound(body, api=api)
+            obj._exists = True
+            return obj
+
+        return ctor
+
+    monkeypatch.setattr(
+        "vmcp_operator.adapters.driven.k8s.kr8s_applier.new_class",
+        nf_class,
+    )
+    applier = Kr8sServerSideApplier(api=object())
+    out = await applier.server_side_apply(
+        {
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {"name": "nf", "namespace": "ns"},
+        },
+        field_manager="fm",
+        force=False,
+    )
+    assert out["metadata"]["name"] == "nf"
+
+    class InnerNotFound(FakeObj):
+        async def patch(self, body: dict[str, Any], **kwargs: Any) -> None:
+            if kwargs.get("type") == "apply":
+                raise RuntimeError("apply unsupported")
+            raise RuntimeError("resource not found")
+
+    def inner_class(**_kwargs: Any):
+        def ctor(body: dict[str, Any], api: Any = None) -> InnerNotFound:
+            obj = InnerNotFound(body, api=api)
+            obj._exists = True
+            return obj
+
+        return ctor
+
+    monkeypatch.setattr(
+        "vmcp_operator.adapters.driven.k8s.kr8s_applier.new_class",
+        inner_class,
+    )
+    out2 = await applier.server_side_apply(
+        {
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {"name": "nf2", "namespace": "ns"},
+        },
+        field_manager="fm",
+        force=False,
+    )
+    assert out2["metadata"]["name"] == "nf2"
+
     out2 = await applier.server_side_apply(body, field_manager="fm", force=True)
     assert out2["data"]["a"] == "1"
 
