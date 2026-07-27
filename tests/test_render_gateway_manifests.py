@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from vmcp_operator.domain.models.artifacts import ArtifactBundle, ArtifactFile
 from vmcp_operator.domain.models.gateway import (
     GatewayDesired,
@@ -9,7 +11,10 @@ from vmcp_operator.domain.models.gateway import (
     RouteDesired,
     SecretRef,
 )
-from vmcp_operator.domain.usecases.render_gateway_manifests import RenderGatewayManifests
+from vmcp_operator.domain.usecases.render_gateway_manifests import (
+    RenderGatewayManifests,
+    flatten_configmap_key,
+)
 
 
 def test_render_gateway_manifests_no_subpath_and_admin_route() -> None:
@@ -57,11 +62,21 @@ def test_render_gateway_manifests_no_subpath_and_admin_route() -> None:
     deploy = next(m for m in manifests if m["kind"] == "Deployment")
     mounts = deploy["spec"]["template"]["spec"]["containers"][0]["volumeMounts"]
     assert all("subPath" not in mount for mount in mounts)
+    cm = next(m for m in manifests if m["kind"] == "ConfigMap")
+    assert "registry.json" in cm["data"]
+    assert all("/" not in key for key in cm["data"])
+    assert deploy["spec"]["template"]["spec"]["initContainers"][0]["name"] == "expand-artifacts"
     admin = next(m for m in manifests if m["metadata"]["name"] == "main-admin")
     assert admin["spec"]["rules"][0]["matches"][0]["path"]["value"] == "/admin"
     pvc = next(m for m in manifests if m["kind"] == "PersistentVolumeClaim")
     assert pvc["spec"]["storageClassName"] == "fast"
     assert pvc["metadata"]["annotations"]["vmcp.io/reclaim-policy"] == "Retain"
+
+
+def test_flatten_configmap_key() -> None:
+    assert flatten_configmap_key("skills/foo.yaml") == "skills__foo.yaml"
+    with pytest.raises(ValueError):
+        flatten_configmap_key("")
 
 
 def test_render_gateway_manifests_without_admin_or_storage_class() -> None:

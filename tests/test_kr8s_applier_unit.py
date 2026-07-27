@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from kr8s._exceptions import NotFoundError
 
 from vmcp_operator.adapters.driven.k8s.kr8s_applier import Kr8sServerSideApplier, _guess_plural
 from vmcp_operator.adapters.driven.k8s.ssa import ConflictError
@@ -15,8 +16,11 @@ class FakeObj:
         self._exists = False
         self.created = False
         self.fail_apply_without_force = False
+        self.raise_not_found_on_exists = False
 
     async def exists(self) -> bool:
+        if self.raise_not_found_on_exists:
+            raise NotFoundError("missing")
         return self._exists
 
     async def create(self) -> None:
@@ -83,6 +87,50 @@ async def test_kr8s_applier_create_and_conflict_retry(monkeypatch: pytest.Monkey
     assert out2["data"]["a"] == "1"
 
 
+@pytest.mark.asyncio
+async def test_kr8s_applier_not_found_creates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_api() -> object:
+        return object()
+
+    monkeypatch.setattr(
+        "vmcp_operator.adapters.driven.k8s.kr8s_applier.kr8s.asyncio.api",
+        fake_api,
+    )
+
+    def fake_new_class(**_kwargs: Any):
+        def ctor(body: dict[str, Any], api: Any = None) -> FakeObj:
+            obj = FakeObj(body, api=api)
+            obj._exists = True
+            obj.fail_apply_without_force = False
+
+            async def boom_patch(body: dict[str, Any], **kwargs: Any) -> None:
+                raise NotFoundError("gone")
+
+            obj.patch = boom_patch  # type: ignore[method-assign]
+            return obj
+
+        return ctor
+
+    monkeypatch.setattr(
+        "vmcp_operator.adapters.driven.k8s.kr8s_applier.new_class",
+        fake_new_class,
+    )
+    applier = Kr8sServerSideApplier(api=object())
+    out = await applier.server_side_apply(
+        {
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {"name": "x", "namespace": "ns"},
+            "data": {"k": "v"},
+        },
+        field_manager="fm",
+        force=False,
+    )
+    assert out["metadata"]["name"] == "x"
+
+
 def test_guess_plural_and_requires_name() -> None:
     assert _guess_plural("ConfigMap") == "configmaps"
     assert _guess_plural("Ingress") == "ingresses"
@@ -90,9 +138,7 @@ def test_guess_plural_and_requires_name() -> None:
 
 
 @pytest.mark.asyncio
-async def test_kr8s_applier_requires_name_and_fallback_patch(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_kr8s_applier_requires_name(monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_api() -> object:
         return object()
 
@@ -108,16 +154,30 @@ async def test_kr8s_applier_requires_name_and_fallback_patch(
             force=False,
         )
 
-    class FallbackObj(FakeObj):
+
+@pytest.mark.asyncio
+async def test_kr8s_applier_conflict_and_plain_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_api() -> object:
+        return object()
+
+    monkeypatch.setattr(
+        "vmcp_operator.adapters.driven.k8s.kr8s_applier.kr8s.asyncio.api",
+        fake_api,
+    )
+
+    class ConflictThenPlain(FakeObj):
         async def patch(self, body: dict[str, Any], **kwargs: Any) -> None:
-            if kwargs.get("type") == "apply":
+            if kwargs.get("type") == "apply" and not kwargs.get("force"):
                 raise RuntimeError("apply unsupported")
+            if kwargs.get("type") == "apply" and kwargs.get("force"):
+                raise RuntimeError("conflict forever")
             self.raw = dict(body)
-            self._exists = True
 
     def fake_new_class(**_kwargs: Any):
-        def ctor(body: dict[str, Any], api: Any = None) -> FallbackObj:
-            obj = FallbackObj(body, api=api)
+        def ctor(body: dict[str, Any], api: Any = None) -> ConflictThenPlain:
+            obj = ConflictThenPlain(body, api=api)
             obj._exists = True
             return obj
 
@@ -127,26 +187,24 @@ async def test_kr8s_applier_requires_name_and_fallback_patch(
         "vmcp_operator.adapters.driven.k8s.kr8s_applier.new_class",
         fake_new_class,
     )
-    out = await applier.server_side_apply(
-        {
-            "apiVersion": "apps/v1",
-            "kind": "Deployment",
-            "metadata": {"name": "x", "namespace": "ns"},
-        },
-        field_manager="fm",
-        force=False,
-    )
-    assert out["metadata"]["name"] == "x"
+    applier = Kr8sServerSideApplier(api=object())
+    body = {
+        "apiVersion": "v1",
+        "kind": "ConfigMap",
+        "metadata": {"name": "y", "namespace": "ns"},
+        "data": {"a": "1"},
+    }
+    # apply unsupported → plain patch succeeds
+    out = await applier.server_side_apply(body, field_manager="fm", force=False)
+    assert out["data"]["a"] == "1"
 
-    class ConflictFallback(FakeObj):
+    class ConflictAll(FakeObj):
         async def patch(self, body: dict[str, Any], **kwargs: Any) -> None:
-            if kwargs.get("type") == "apply":
-                raise RuntimeError("apply unsupported")
-            raise RuntimeError("conflict in replace")
+            raise RuntimeError("conflict forever")
 
     def conflict_class(**_kwargs: Any):
-        def ctor(body: dict[str, Any], api: Any = None) -> ConflictFallback:
-            obj = ConflictFallback(body, api=api)
+        def ctor(body: dict[str, Any], api: Any = None) -> ConflictAll:
+            obj = ConflictAll(body, api=api)
             obj._exists = True
             return obj
 
@@ -157,12 +215,4 @@ async def test_kr8s_applier_requires_name_and_fallback_patch(
         conflict_class,
     )
     with pytest.raises(ConflictError):
-        await applier.server_side_apply(
-            {
-                "apiVersion": "v1",
-                "kind": "ConfigMap",
-                "metadata": {"name": "y", "namespace": "ns"},
-            },
-            field_manager="fm",
-            force=False,
-        )
+        await applier.server_side_apply(body, field_manager="fm", force=False)

@@ -40,7 +40,10 @@ class RenderGatewayManifests:
             "vmcp.io/reclaim-policy": gateway.persistence.reclaim_policy,
         }
 
-        cm_data = {path: file.data for path, file in artifacts.files.items()}
+        # ConfigMap keys cannot contain '/'; flatten path → key with '__'.
+        cm_data = {
+            flatten_configmap_key(path): file.data for path, file in artifacts.files.items()
+        }
         configmap = {
             "apiVersion": "v1",
             "kind": "ConfigMap",
@@ -51,6 +54,7 @@ class RenderGatewayManifests:
                 "annotations": {
                     "vmcp.io/bundle-sha256": artifacts.bundle_sha256,
                     "vmcp.io/registry-sha256": artifacts.registry_sha256,
+                    "vmcp.io/key-encoding": "slash-as-double-underscore",
                 },
             },
             "data": cm_data,
@@ -84,6 +88,27 @@ class RenderGatewayManifests:
                         },
                     },
                     "spec": {
+                        "initContainers": [
+                            {
+                                "name": "expand-artifacts",
+                                "image": gateway.image,
+                                "command": ["sh", "-c"],
+                                "args": [
+                                    "set -eu; "
+                                    "mkdir -p /config; "
+                                    "for f in /config-raw/*; do "
+                                    "  base=$(basename \"$f\"); "
+                                    "  rel=$(printf '%s' \"$base\" | sed 's#__#/#g'); "
+                                    "  mkdir -p \"/config/$(dirname \"$rel\")\"; "
+                                    "  cp \"$f\" \"/config/$rel\"; "
+                                    "done"
+                                ],
+                                "volumeMounts": [
+                                    {"name": "artifacts-raw", "mountPath": "/config-raw"},
+                                    {"name": "artifacts", "mountPath": "/config"},
+                                ],
+                            }
+                        ],
                         "containers": [
                             {
                                 "name": "vmcp",
@@ -97,7 +122,7 @@ class RenderGatewayManifests:
                                     {
                                         "name": "artifacts",
                                         "mountPath": "/config",
-                                        # Directory mount without subPath — atomic CM updates.
+                                        # Expanded directory (no subPath) for atomic CM rolls.
                                     },
                                     {"name": "state", "mountPath": "/state"},
                                 ],
@@ -105,9 +130,10 @@ class RenderGatewayManifests:
                         ],
                         "volumes": [
                             {
-                                "name": "artifacts",
+                                "name": "artifacts-raw",
                                 "configMap": {"name": f"{name}-artifacts"},
                             },
+                            {"name": "artifacts", "emptyDir": {}},
                             {
                                 "name": "state",
                                 "persistentVolumeClaim": {"claimName": f"{name}-state"},
@@ -171,3 +197,10 @@ def _parent_ref(ref: GatewayParentRef) -> dict[str, str]:
     if ref.section_name:
         out["sectionName"] = ref.section_name
     return out
+
+
+def flatten_configmap_key(path: str) -> str:
+    """Encode nested artifact paths into legal ConfigMap keys."""
+    if path != path.strip() or not path:
+        raise ValueError("artifact path must be non-empty")
+    return path.replace("/", "__")

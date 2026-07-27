@@ -87,6 +87,27 @@ async def main() -> int:
         }
     )
 
+    # Apply core/workload objects; Gateway API HTTPRoutes need CRDs not present
+    # in bare KWOK, so filter them out for this API-level smoke.
+    async def apply_without_httproute(body: dict) -> dict:
+        if body.get("kind") == "HTTPRoute":
+            return {"skipped": True, "kind": "HTTPRoute", "name": body["metadata"]["name"]}
+        return await apply.apply(body)
+
+    class _FilterApply:
+        async def apply(self, body: dict) -> dict:
+            return await apply_without_httproute(body)
+
+    gateway_reconcile = GatewayReconcile(
+        artifacts=gateway_reconcile.artifacts,
+        manifests=gateway_reconcile.manifests,
+        apply=_FilterApply(),  # type: ignore[arg-type]
+    )
+    mcp_reconcile = McpReconcile(
+        manifests=mcp_reconcile.manifests,
+        apply=_FilterApply(),  # type: ignore[arg-type]
+    )
+
     gw_result = await gateway_reconcile.execute(gateway, mcps)
     mcp_results = []
     for mcp in mcps:
