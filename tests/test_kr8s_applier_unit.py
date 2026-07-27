@@ -140,7 +140,9 @@ async def test_kr8s_applier_requires_name_and_fallback_patch(
 
     class ConflictFallback(FakeObj):
         async def patch(self, body: dict[str, Any], **kwargs: Any) -> None:
-            raise RuntimeError("conflict forever")
+            if kwargs.get("type") == "apply":
+                raise RuntimeError("apply unsupported")
+            raise RuntimeError("conflict in replace")
 
     def conflict_class(**_kwargs: Any):
         def ctor(body: dict[str, Any], api: Any = None) -> ConflictFallback:
