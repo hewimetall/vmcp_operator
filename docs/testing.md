@@ -28,6 +28,13 @@ PYTHON_LAZY_IMPORTS=normal PYTHONUNBUFFERED=1 \
 Kind/k3s full kubelet e2e needs a host with working overlayfs + cgroup v2 nesting.
 In constrained VMs use KWOK for API-level concurrency proof.
 
+## Driven adapters covered by unit tests
+
+- `VmcpApiClient` / `VmcpTokenIssuer` (httpx; reload sha match + mcp:use issuance)
+- `RenderMcpManifests` (ContainerImage Deploy/Service + independent webExposure routes)
+- `PlanSkillsSync` / finalizer helpers (admin-owned skills preserved; unregister-before-GC)
+- `Kr8sServerSideApplier` + `ServerSideApply` conflict retry
+
 ## Profiles
 
 Apply after operator install + secrets:
