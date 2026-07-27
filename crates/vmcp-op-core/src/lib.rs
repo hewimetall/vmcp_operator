@@ -4,23 +4,25 @@
 //! deterministic validation/rendering helpers that are shared by the thin
 //! Python extension.
 
-use sha2::{Digest, Sha256};
+mod bundle;
+mod error;
+mod hash;
+mod image_policy;
+mod naming;
+mod registry;
+mod sidecar;
+mod skills;
 
-/// Return a lowercase SHA-256 digest for deterministic artifact verification.
-#[must_use]
-pub fn sha256_hex(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn sha256_is_stable() {
-        assert_eq!(
-            sha256_hex(b"vmcp-operator"),
-            "a78dc5576bf47b2fc53a63ee91392950bc99054b4a084b88d4c2843ba0352d58"
-        );
-    }
-}
+pub use bundle::{
+    ArtifactBundle, ArtifactFile, DesiredUpstreamArtifacts, MAX_BUNDLE_BYTES,
+    render_artifact_bundle,
+};
+pub use error::{CoreError, CoreResult};
+pub use hash::sha256_hex;
+pub use image_policy::{ImageRef, image_allowed, parse_image_ref};
+pub use naming::{camel_case, pascal_case, reject_graphql_name_collisions};
+pub use registry::{DesiredHttpUpstream, RenderedRegistry, render_registry};
+pub use sidecar::{RenderedSidecar, TaskSupport, ToolOverride, render_sidecar};
+pub use skills::{
+    DesiredSkill, DesiredSkillArg, RenderedSkill, reject_duplicate_skill_names, render_skill,
+};
