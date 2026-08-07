@@ -1,0 +1,15 @@
+apiVersion: vmcp.io/v1alpha1
+kind: VmcpMcpServer
+metadata:
+  name: stand-api
+  namespace: team-a
+spec:
+  enabled: true
+  description: Internal adapter that authorizes tenancy from X-Vmcp-* headers
+  gatewayRef:
+    name: main
+  # Opt-in identity propagation (vmcp ≥1.2).
+  forwardIdentity: true
+  source:
+    type: RemoteHttp
+    url: http://stand-api.team-a.svc/mcp

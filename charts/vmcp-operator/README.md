@@ -38,6 +38,12 @@ helm upgrade vmcp-operator ./charts/vmcp-operator \
 
 ## After install
 
-1. Create `tokens.json` Secrets for each Gateway (`adminTokenSecretRef`).
-2. Apply profile bundles under `deploy/profiles/` or sample CRs under `deploy/samples/`.
+1. Create Secrets for each Gateway:
+   - `adminTokenSecretRef` — `tokens.json` body (key default `token`)
+   - `masterPasswordSecretRef` — argon2id hash from `vmcp hash-password`
+   - optional `auth.authentik.forwardAuthSecretRef` for hop trust (vmcp ≥1.2)
+2. Apply profile bundles under `deploy/profiles/` or sample CRs under `deploy/samples/`
+   (use a vmcp **≥1.2** image for AuthFacade / hop trust / `forwardIdentity`).
 3. Port-forward the dashboard Service when enabled.
+
+See [docs/compatibility.md](../../docs/compatibility.md).

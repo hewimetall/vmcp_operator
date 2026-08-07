@@ -10,6 +10,8 @@ spec:
   description: Architect C4 model tools + viewer
   gatewayRef:
     name: code
+  # Internal adapter — forward caller identity (vmcp ≥1.2).
+  forwardIdentity: true
   source:
     type: ContainerImage
     image: registry.example.com/ai/architect-c4:0.1.0

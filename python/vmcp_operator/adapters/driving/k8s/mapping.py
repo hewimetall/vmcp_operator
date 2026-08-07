@@ -5,9 +5,15 @@ from __future__ import annotations
 from typing import Any
 
 from vmcp_operator.domain.models.gateway import (
+    AdminAuthDesired,
+    AdminAuthMode,
+    AuthDesired,
+    AuthentikDesired,
+    AuthProvider,
     GatewayDesired,
     GatewayKey,
     GatewayParentRef,
+    GqlDesired,
     PersistenceDesired,
     ProxyDesired,
     RouteDesired,
@@ -32,11 +38,14 @@ def map_gateway(namespace: str, name: str, spec: dict[str, Any]) -> GatewayDesir
     persistence = spec.get("persistence") or {}
     tasks = spec.get("tasks") or {}
     proxy = spec.get("proxy") or {}
+    gql = spec.get("gql") or {}
     return GatewayDesired(
         key=GatewayKey(namespace=namespace, name=name),
         image=str(spec["image"]),
         admin_token_secret_ref=_secret_ref(spec["adminTokenSecretRef"]),
-        master_password_secret_ref=_secret_ref(spec["masterPasswordSecretRef"]),
+        master_password_secret_ref=_secret_ref(
+            spec["masterPasswordSecretRef"], default_key="password"
+        ),
         public_route=_route(public),
         admin_route=_route(admin) if admin else None,
         persistence=PersistenceDesired(
@@ -52,6 +61,11 @@ def map_gateway(namespace: str, name: str, spec: dict[str, Any]) -> GatewayDesir
             enabled=bool(proxy.get("enabled", False)),
             path=str(proxy.get("path", "/mcp-proxy")),
         ),
+        gql=GqlDesired(
+            max_complexity=int(gql.get("maxComplexity", 1000)),
+            max_depth=int(gql.get("maxDepth", 10)),
+        ),
+        auth=_map_auth(spec.get("auth") or {}),
         skill_refs=tuple(_skill_ref(item) for item in spec.get("skillRefs") or ()),
     )
 
@@ -111,11 +125,50 @@ def map_mcp(namespace: str, name: str, spec: dict[str, Any]) -> McpServerDesired
         ),
         skill_refs=tuple(_skill_ref(item) for item in spec.get("skillRefs") or ()),
         web_exposures=tuple(_web_exposure(item) for item in spec.get("webExposures") or ()),
+        forward_identity=bool(spec.get("forwardIdentity", False)),
     )
 
 
-def _secret_ref(raw: dict[str, Any]) -> SecretRef:
-    return SecretRef(name=str(raw["name"]), key=str(raw.get("key", "token")))
+def _map_auth(raw: dict[str, Any]) -> AuthDesired:
+    admin_raw = raw.get("admin") or {}
+    ak_raw = raw.get("authentik") or {}
+    provider = AuthProvider(str(raw.get("provider", "local")))
+    admin_mode = AdminAuthMode(str(admin_raw.get("mode", "basic")))
+    group_scopes_raw = ak_raw.get("groupScopes") or {}
+    group_scopes = tuple(
+        sorted((str(k), str(v)) for k, v in group_scopes_raw.items())
+    )
+    forward_secret = ak_raw.get("forwardAuthSecretRef")
+    return AuthDesired(
+        enabled=bool(raw.get("enabled", True)),
+        provider=provider,
+        admin=AdminAuthDesired(
+            mode=admin_mode,
+            required_groups=tuple(str(g) for g in admin_raw.get("requiredGroups") or ()),
+        ),
+        authentik=AuthentikDesired(
+            issuer=str(ak_raw.get("issuer", "")),
+            jwks_url=str(ak_raw.get("jwksUrl", "")),
+            audiences=tuple(str(a) for a in ak_raw.get("audiences") or ()),
+            accept_bearer=bool(ak_raw.get("acceptBearer", True)),
+            forward_auth=bool(ak_raw.get("forwardAuth", True)),
+            username_header=str(ak_raw.get("usernameHeader", "x-authentik-username")),
+            groups_header=str(ak_raw.get("groupsHeader", "x-authentik-groups")),
+            groups_claim=str(ak_raw.get("groupsClaim", "groups")),
+            group_scopes=group_scopes,
+            trusted_proxies=tuple(str(p) for p in ak_raw.get("trustedProxies") or ()),
+            forward_auth_secret_ref=(
+                _secret_ref(forward_secret, default_key="secret") if forward_secret else None
+            ),
+            forward_auth_secret_header=str(
+                ak_raw.get("forwardAuthSecretHeader", "x-vmcp-forward-auth")
+            ),
+        ),
+    )
+
+
+def _secret_ref(raw: dict[str, Any], *, default_key: str = "token") -> SecretRef:
+    return SecretRef(name=str(raw["name"]), key=str(raw.get("key", default_key)))
 
 
 def _route(raw: dict[str, Any]) -> RouteDesired:

@@ -7,6 +7,8 @@ from typing import Any
 
 from vmcp_operator.domain.models.artifacts import ArtifactBundle
 from vmcp_operator.domain.models.gateway import GatewayDesired, GatewayParentRef
+from vmcp_operator.domain.models.mcp import McpServerDesired, RemoteHttpSource
+from vmcp_operator.domain.usecases.render_gateway_config import render_gateway_config
 
 # Any retained for Kubernetes object dictionaries only.
 
@@ -15,7 +17,12 @@ from vmcp_operator.domain.models.gateway import GatewayDesired, GatewayParentRef
 class RenderGatewayManifests:
     """Build child object dicts. Apply/SSA belongs in driven adapters."""
 
-    def execute(self, gateway: GatewayDesired, artifacts: ArtifactBundle) -> list[dict[str, Any]]:
+    def execute(
+        self,
+        gateway: GatewayDesired,
+        artifacts: ArtifactBundle,
+        mcps: list[McpServerDesired] | None = None,
+    ) -> list[dict[str, Any]]:
         ns = gateway.key.namespace
         name = gateway.key.name
         labels = {
@@ -44,6 +51,7 @@ class RenderGatewayManifests:
         cm_data = {
             flatten_configmap_key(path): file.data for path, file in artifacts.files.items()
         }
+        cm_data["vmcp.toml"] = render_gateway_config(gateway)
         configmap = {
             "apiVersion": "v1",
             "kind": "ConfigMap",
@@ -55,6 +63,7 @@ class RenderGatewayManifests:
                     "vmcp.io/bundle-sha256": artifacts.bundle_sha256,
                     "vmcp.io/registry-sha256": artifacts.registry_sha256,
                     "vmcp.io/key-encoding": "slash-as-double-underscore",
+                    "vmcp.io/contract": "vmcp-v1.2",
                 },
             },
             "data": cm_data,
@@ -72,6 +81,40 @@ class RenderGatewayManifests:
                 ],
             },
         }
+
+        env = _gateway_env(gateway, mcps or [])
+        volumes = [
+            {
+                "name": "artifacts-raw",
+                "configMap": {"name": f"{name}-artifacts"},
+            },
+            {"name": "artifacts", "emptyDir": {}},
+            {
+                "name": "state",
+                "persistentVolumeClaim": {"claimName": f"{name}-state"},
+            },
+            {
+                "name": "admin-tokens",
+                "secret": {
+                    "secretName": gateway.admin_token_secret_ref.name,
+                    "items": [
+                        {
+                            "key": gateway.admin_token_secret_ref.key,
+                            "path": "tokens.json",
+                        }
+                    ],
+                },
+            },
+        ]
+        volume_mounts = [
+            {"name": "artifacts", "mountPath": "/config"},
+            {"name": "state", "mountPath": "/state"},
+            {
+                "name": "admin-tokens",
+                "mountPath": "/secrets",
+                "readOnly": True,
+            },
+        ]
 
         deployment = {
             "apiVersion": "apps/v1",
@@ -114,31 +157,11 @@ class RenderGatewayManifests:
                                 "name": "vmcp",
                                 "image": gateway.image,
                                 "ports": [{"name": "http", "containerPort": 8080}],
-                                "env": [
-                                    {"name": "VMCP_REGISTRY", "value": "/config/registry.json"},
-                                    {"name": "VMCP_SKILLS_DIR", "value": "/state/skills"},
-                                ],
-                                "volumeMounts": [
-                                    {
-                                        "name": "artifacts",
-                                        "mountPath": "/config",
-                                        # Expanded directory (no subPath) for atomic CM rolls.
-                                    },
-                                    {"name": "state", "mountPath": "/state"},
-                                ],
+                                "env": env,
+                                "volumeMounts": volume_mounts,
                             }
                         ],
-                        "volumes": [
-                            {
-                                "name": "artifacts-raw",
-                                "configMap": {"name": f"{name}-artifacts"},
-                            },
-                            {"name": "artifacts", "emptyDir": {}},
-                            {
-                                "name": "state",
-                                "persistentVolumeClaim": {"claimName": f"{name}-state"},
-                            },
-                        ],
+                        "volumes": volumes,
                     },
                 },
             },
@@ -188,6 +211,56 @@ class RenderGatewayManifests:
                 }
             )
         return manifests
+
+
+def _gateway_env(
+    gateway: GatewayDesired, mcps: list[McpServerDesired]
+) -> list[dict[str, Any]]:
+    env: list[dict[str, Any]] = [
+        {"name": "VMCP_CONFIG", "value": "/config/vmcp.toml"},
+        {"name": "VMCP_REGISTRY_PATH", "value": "/config/registry.json"},
+        {"name": "VMCP_SKILLS_DIR", "value": "/state/skills"},
+        {
+            "name": "VMCP_AUTH__MASTER_PASSWORD_ARGON2",
+            "valueFrom": {
+                "secretKeyRef": {
+                    "name": gateway.master_password_secret_ref.name,
+                    "key": gateway.master_password_secret_ref.key,
+                }
+            },
+        },
+    ]
+    ak_secret = gateway.auth.authentik.forward_auth_secret_ref
+    if ak_secret is not None:
+        env.append(
+            {
+                "name": "VMCP_AUTH__AUTHENTIK__FORWARD_AUTH_SECRET",
+                "valueFrom": {
+                    "secretKeyRef": {
+                        "name": ak_secret.name,
+                        "key": ak_secret.key,
+                    }
+                },
+            }
+        )
+    for mcp in sorted(mcps, key=lambda item: item.name):
+        if not mcp.enabled or mcp.gateway_key != gateway.key:
+            continue
+        source = mcp.source
+        if isinstance(source, RemoteHttpSource) and source.bearer_secret_ref is not None:
+            env_name = f"VMCP_BEARER_{mcp.name.upper().replace('-', '_')}"
+            env.append(
+                {
+                    "name": env_name,
+                    "valueFrom": {
+                        "secretKeyRef": {
+                            "name": source.bearer_secret_ref.name,
+                            "key": source.bearer_secret_ref.key,
+                        }
+                    },
+                }
+            )
+    return env
 
 
 def _parent_ref(ref: GatewayParentRef) -> dict[str, str]:

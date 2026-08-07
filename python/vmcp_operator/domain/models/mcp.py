@@ -69,3 +69,5 @@ class McpServerDesired:
     tool_overrides: tuple[ToolOverrideDesired, ...] = ()
     skill_refs: tuple[SkillRef, ...] = ()
     web_exposures: tuple[WebExposureDesired, ...] = ()
+    # Opt-in (vmcp v1.2+): forward X-Vmcp-Subject/Groups to this upstream.
+    forward_identity: bool = False

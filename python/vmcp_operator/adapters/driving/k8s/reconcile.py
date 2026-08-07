@@ -28,7 +28,7 @@ class GatewayReconcile:
     ) -> dict[str, Any]:
         del skills
         bundle = await self.artifacts.execute(gateway, mcps)
-        objects = self.manifests.execute(gateway, bundle)
+        objects = self.manifests.execute(gateway, bundle, mcps)
         for obj in objects:
             await self.apply.apply(obj)
         return {

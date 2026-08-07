@@ -543,7 +543,7 @@ dependencies = [
 [[package]]
 name = "vmcp-registry"
 version = "1.0.0"
-source = "git+https://github.com/hewimetall/vmcp?rev=f6664e6be8d6926b7bd81683eb47981736d642c3#f6664e6be8d6926b7bd81683eb47981736d642c3"
+source = "git+https://github.com/hewimetall/vmcp?rev=450f7426477b78b554b2463cb13a5c2268eab000#450f7426477b78b554b2463cb13a5c2268eab000"
 dependencies = [
  "chrono",
  "serde",

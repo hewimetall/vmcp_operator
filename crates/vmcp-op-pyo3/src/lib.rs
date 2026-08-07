@@ -29,6 +29,8 @@ struct PyDesiredHttpUpstream {
     description: Option<String>,
     sidecar_relpath: Option<String>,
     enabled: bool,
+    #[pyo3(default)]
+    forward_identity: bool,
 }
 
 impl From<PyDesiredHttpUpstream> for DesiredHttpUpstream {
@@ -40,6 +42,7 @@ impl From<PyDesiredHttpUpstream> for DesiredHttpUpstream {
             description: value.description,
             sidecar_relpath: value.sidecar_relpath,
             enabled: value.enabled,
+            forward_identity: value.forward_identity,
         }
     }
 }

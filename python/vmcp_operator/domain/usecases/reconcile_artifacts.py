@@ -61,6 +61,7 @@ def _to_upstream(gateway: GatewayDesired, mcp: McpServerDesired) -> UpstreamDesi
             bearer_env=bearer_env,
             description=mcp.description,
             enabled=True,
+            forward_identity=mcp.forward_identity,
         )
     if isinstance(source, ContainerImageSource):
         port = next(
@@ -79,6 +80,7 @@ def _to_upstream(gateway: GatewayDesired, mcp: McpServerDesired) -> UpstreamDesi
             url=url,
             description=mcp.description,
             enabled=True,
+            forward_identity=mcp.forward_identity,
         )
     msg = f"unsupported source for mcp `{mcp.name}`"
     raise TypeError(msg)

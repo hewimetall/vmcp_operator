@@ -56,6 +56,13 @@ spec:
                   default: true
                 description:
                   type: string
+                forwardIdentity:
+                  type: boolean
+                  default: false
+                  description: >
+                    When true, vmcp (≥1.2) forwards authenticated caller identity
+                    (X-Vmcp-Subject / X-Vmcp-Groups) to this HTTP upstream on tools/call.
+                    Enable only for internal adapters; leave false for external SaaS.
                 gatewayRef:
                   type: object
                   required: [name]

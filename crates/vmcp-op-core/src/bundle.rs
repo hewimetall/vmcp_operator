@@ -131,6 +131,7 @@ mod tests {
                     description: Some("docs".into()),
                     sidecar_relpath: None,
                     enabled: true,
+                    forward_identity: false,
                 },
                 tool_overrides: vec![ToolOverride {
                     name: "get_model".into(),
