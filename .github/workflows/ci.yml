@@ -51,6 +51,7 @@ jobs:
           helm template test charts/vmcp-operator --namespace vmcp-system >/tmp/out.yaml
           # Chart must contain operator Deployment (grep is available on ubuntu-latest).
           grep -n 'app.kubernetes.io/component: operator' /tmp/out.yaml
+          grep -n 'ghcr.io/hewimetall/vmcp_operator' /tmp/out.yaml
           if grep -n 'containerPort: 8080' /tmp/out.yaml >/dev/null; then
             echo "operator dashboard port present"
           fi
@@ -59,3 +60,36 @@ jobs:
           mkdir -p dist/charts
           helm package charts/vmcp-operator --destination dist/charts
           ls dist/charts/*.tgz
+
+  # Build-only smoke (no push) — same Dockerfile target as release.yml.
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build runtime image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          push: false
+          load: true
+          tags: vmcp-operator:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Entrypoint is not a no-op
+        run: |
+          set -euo pipefail
+          # Placeholder image used CMD ["true"] and exited 0 with no process.
+          entry="$(docker image inspect vmcp-operator:ci --format '{{json .Config.Entrypoint}}')"
+          echo "Entrypoint=$entry"
+          echo "$entry" | grep -q 'vmcp-operator'
+          # Without kubeconfig the process must fail closed (not hang / not silent 0).
+          set +e
+          timeout 30s docker run --rm --network none vmcp-operator:ci
+          code=$?
+          set -e
+          # 124 = timeout (hung); 0 = old placeholder CMD true.
+          test "$code" -ne 0
+          test "$code" -ne 124
+          echo "runtime entrypoint failed closed with exit=$code (expected)"
