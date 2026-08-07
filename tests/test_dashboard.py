@@ -6,7 +6,9 @@ import pytest
 import pytest_asyncio
 from aiohttp.test_utils import TestClient, TestServer
 
+from vmcp_operator.adapters.driven.k8s.mcp_catalog import InMemoryMcpCatalog
 from vmcp_operator.adapters.driving.dashboard.app import DashboardAuth, RateLimiter, create_app
+from vmcp_operator.adapters.driving.dashboard.control_plane import build_control_plane
 from vmcp_operator.domain.models.gateway import (
     GatewayDesired,
     GatewayKey,
@@ -66,10 +68,17 @@ def _gateway() -> GatewayDesired:
 @pytest_asyncio.fixture
 async def client() -> TestClient:
     gateways = FakeGateways([_gateway()])
+    control = build_control_plane(gateways=gateways, catalog=InMemoryMcpCatalog())
     app = create_app(
         auth=DashboardAuth(username="admin", password="secret"),
         list_environments=ListEnvironments(gateways=gateways, phases={"team-a/main": "Ready"}),
         issue_use_token=IssueUseToken(gateways=gateways, issuer=FakeIssuer()),
+        list_mcps=control.list_mcps,
+        get_mcp=control.get_mcp,
+        add_mcp=control.add_mcp,
+        update_mcp=control.update_mcp,
+        remove_mcp=control.remove_mcp,
+        nl_crud=control.nl_crud,
         rate_limiter=RateLimiter(limit=5, window=60),
     )
     server = TestServer(app)
@@ -114,6 +123,55 @@ async def test_dashboard_lists_environments_and_issues_token(client: TestClient)
 
 
 @pytest.mark.asyncio
+async def test_dashboard_mcp_crud_and_nl(client: TestClient) -> None:
+    headers = _auth_header()
+    resp = await client.post(
+        "/api/gateways/team-a/main/mcps",
+        headers=headers,
+        json={
+            "name": "docs",
+            "source": {"type": "RemoteHttp", "url": "https://docs.example.com/mcp"},
+        },
+    )
+    assert resp.status == 201
+    body = await resp.json()
+    assert body["name"] == "docs"
+
+    resp = await client.get("/api/gateways/team-a/main/mcps", headers=headers)
+    assert resp.status == 200
+    assert len(await resp.json()) == 1
+
+    resp = await client.put(
+        "/api/gateways/team-a/main/mcps/docs",
+        headers=headers,
+        json={"forwardIdentity": True},
+    )
+    assert resp.status == 200
+    assert (await resp.json())["forwardIdentity"] is True
+
+    resp = await client.post(
+        "/api/nl",
+        headers=headers,
+        json={"utterance": "list mcps on team-a/main"},
+    )
+    assert resp.status == 200
+    payload = await resp.json()
+    assert payload["applied"] is True
+    assert payload["mcps"][0]["name"] == "docs"
+
+    resp = await client.post(
+        "/api/nl",
+        headers=headers,
+        json={"utterance": "удали mcp docs из team-a/main"},
+    )
+    assert resp.status == 200
+    assert (await resp.json())["message"] == "removed"
+
+    resp = await client.get("/api/gateways/team-a/main/mcps/docs", headers=headers)
+    assert resp.status == 404
+
+
+@pytest.mark.asyncio
 async def test_dashboard_rate_limit(client: TestClient) -> None:
     headers = _auth_header()
     for idx in range(5):
@@ -136,7 +194,9 @@ async def test_dashboard_index_and_bad_origin(client: TestClient) -> None:
     headers = _auth_header()
     resp = await client.get("/", headers=headers)
     assert resp.status == 200
-    assert "vmcp environments" in await resp.text()
+    text = await resp.text()
+    assert "vmcp environments" in text
+    assert "NL CRUD" in text
     resp = await client.post(
         "/api/tokens",
         headers={**headers, "Origin": "https://evil.example"},
@@ -186,3 +246,108 @@ async def test_dashboard_validation_errors(client: TestClient) -> None:
     assert resp.status == 401
     resp = await client.get("/static/dashboard.css", headers=headers)
     assert resp.status == 200
+    # Static assets skip Basic auth.
+    resp = await client.get("/static/dashboard.css")
+    assert resp.status == 200
+    resp = await client.post(
+        "/api/nl",
+        headers=headers,
+        json={"utterance": "not a command"},
+    )
+    assert resp.status == 400
+    resp = await client.post(
+        "/api/gateways/team-a/main/mcps",
+        headers=headers,
+        json={"name": "bad", "source": {"type": "RemoteHttp"}},
+    )
+    assert resp.status == 400
+    resp = await client.put(
+        "/api/gateways/team-a/main/mcps/missing",
+        headers=headers,
+        json={"enabled": False},
+    )
+    assert resp.status == 404
+    resp = await client.delete(
+        "/api/gateways/team-a/main/mcps/missing",
+        headers=headers,
+    )
+    assert resp.status == 404
+    resp = await client.get("/api/gateways/missing/gw/mcps", headers=headers)
+    assert resp.status == 404
+    resp = await client.get("/api/gateways/missing/gw/mcps/x", headers=headers)
+    assert resp.status == 404
+    resp = await client.delete("/api/gateways/missing/gw/mcps/x", headers=headers)
+    assert resp.status == 404
+    resp = await client.put(
+        "/api/gateways/missing/gw/mcps/x",
+        headers=headers,
+        json={"enabled": False},
+    )
+    assert resp.status == 404
+    resp = await client.post(
+        "/api/gateways/missing/gw/mcps",
+        headers=headers,
+        json={"name": "x", "source": {"type": "RemoteHttp", "url": "https://x/mcp"}},
+    )
+    assert resp.status == 404
+    resp = await client.post(
+        "/api/gateways/team-a/main/mcps",
+        headers=headers,
+        json={
+            "name": "docs",
+            "source": {"type": "RemoteHttp", "url": "https://docs.example.com/mcp"},
+        },
+    )
+    assert resp.status == 201
+    resp = await client.get("/api/gateways/team-a/main/mcps/docs", headers=headers)
+    assert resp.status == 200
+    resp = await client.post(
+        "/api/gateways/team-a/main/mcps",
+        headers=headers,
+        json={
+            "name": "docs",
+            "source": {"type": "RemoteHttp", "url": "https://docs.example.com/mcp"},
+        },
+    )
+    assert resp.status == 409
+    resp = await client.put(
+        "/api/gateways/team-a/main/mcps/docs",
+        headers=headers,
+        json={},
+    )
+    assert resp.status == 400
+    resp = await client.post(
+        "/api/nl",
+        headers=headers,
+        json={"action": "get", "gateway": "team-a/main", "name": "docs"},
+    )
+    assert resp.status == 200
+    resp = await client.post(
+        "/api/nl",
+        headers=headers,
+        json={"utterance": "list mcps on team-a/main", "dryRun": True},
+    )
+    assert resp.status == 200
+    assert (await resp.json())["applied"] is False
+    resp = await client.post(
+        "/api/nl",
+        headers=headers,
+        json={"utterance": "get mcp missing on team-a/main"},
+    )
+    assert resp.status == 404
+    resp = await client.delete("/api/gateways/team-a/main/mcps/docs", headers=headers)
+    assert resp.status == 200
+    assert (await resp.json())["removed"] is True
+    # _parse_gateway empty segments
+    resp = await client.post(
+        "/api/tokens",
+        headers=headers,
+        json={"gateway": "team-a/", "clientName": "x"},
+    )
+    assert resp.status == 400
+    resp = await client.post(
+        "/api/tokens",
+        headers=headers,
+        json={"gateway": "/main", "clientName": "x"},
+    )
+    assert resp.status == 400

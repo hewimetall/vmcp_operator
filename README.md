@@ -40,3 +40,6 @@ Phase −1 compatibility results: [docs/phase-minus-one.md](docs/phase-minus-one
 
 Gateway contract (vmcp **≥1.2** AuthFacade / hop trust / `forward_identity`):
 [docs/compatibility.md](docs/compatibility.md).
+
+Operator control plane **above** vmcp (MCP add/remove/update + NL CRUD):
+[docs/control-plane.md](docs/control-plane.md).

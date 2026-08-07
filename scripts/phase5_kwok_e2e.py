@@ -148,6 +148,10 @@ async def _dashboard_check(gateways) -> dict:
 
     store = Store(gateways)
     issuer = Issuer()
+    from vmcp_operator.adapters.driven.k8s.mcp_catalog import InMemoryMcpCatalog
+    from vmcp_operator.adapters.driving.dashboard.control_plane import build_control_plane
+
+    control = build_control_plane(gateways=store, catalog=InMemoryMcpCatalog())
     app = create_app(
         auth=DashboardAuth(username="admin", password="secret"),
         list_environments=ListEnvironments(
@@ -155,6 +159,12 @@ async def _dashboard_check(gateways) -> dict:
             phases={g.key.as_str(): "Ready" for g in gateways},
         ),
         issue_use_token=IssueUseToken(gateways=store, issuer=issuer),
+        list_mcps=control.list_mcps,
+        get_mcp=control.get_mcp,
+        add_mcp=control.add_mcp,
+        update_mcp=control.update_mcp,
+        remove_mcp=control.remove_mcp,
+        nl_crud=control.nl_crud,
     )
     from aiohttp.test_utils import TestClient, TestServer
 

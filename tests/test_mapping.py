@@ -87,3 +87,8 @@ def test_map_architect_forward_identity() -> None:
     doc = yaml.safe_load((ROOT / "code" / "mcp-architect-c4.yaml").read_text())
     mcp = map_mcp(doc["metadata"]["namespace"], doc["metadata"]["name"], doc["spec"])
     assert mcp.forward_identity is True
+    from vmcp_operator.adapters.driving.k8s.mapping import mcp_to_crd
+
+    crd = mcp_to_crd(mcp)
+    assert crd["spec"]["forwardIdentity"] is True
+    assert crd["spec"]["source"]["type"] == "ContainerImage"

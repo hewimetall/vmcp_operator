@@ -23,6 +23,18 @@ class McpServerRepository(Protocol):
     async def list_for_gateway(self, key: GatewayKey) -> list[McpServerDesired]: ...
 
 
+class McpCatalog(Protocol):
+    """Operator-owned VmcpMcpServer CR catalog (SoT for fleet MCP CRUD)."""
+
+    async def list_for_gateway(self, key: GatewayKey) -> list[McpServerDesired]: ...
+
+    async def get(self, namespace: str, name: str) -> McpServerDesired | None: ...
+
+    async def upsert(self, mcp: McpServerDesired) -> McpServerDesired: ...
+
+    async def delete(self, namespace: str, name: str) -> bool: ...
+
+
 class SkillLoader(Protocol):
     async def load_skills(
         self, gateway: GatewayDesired, mcps: list[McpServerDesired]

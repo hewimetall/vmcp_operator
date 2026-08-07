@@ -210,3 +210,135 @@ def _web_exposure(raw: dict[str, Any]) -> WebExposureDesired:
         ),
         public_base_url_env=raw.get("publicBaseUrlEnv"),
     )
+
+
+def mcp_to_crd(mcp: McpServerDesired) -> dict[str, Any]:
+    """Serialize desired MCP state into a VmcpMcpServer CR body."""
+    if mcp.gateway_key.namespace != mcp.namespace:
+        raise ValueError("mcp namespace must match gateway namespace")
+    source: dict[str, Any]
+    if isinstance(mcp.source, RemoteHttpSource):
+        source = {"type": "RemoteHttp", "url": mcp.source.url}
+        if mcp.source.bearer_secret_ref is not None:
+            source["bearerSecretRef"] = {
+                "name": mcp.source.bearer_secret_ref.name,
+                "key": mcp.source.bearer_secret_ref.key,
+            }
+    elif isinstance(mcp.source, ContainerImageSource):
+        source = {
+            "type": "ContainerImage",
+            "image": mcp.source.image,
+            "ports": [
+                {
+                    "name": port.name,
+                    "containerPort": port.container_port,
+                    "protocol": port.protocol,
+                }
+                for port in mcp.source.ports
+            ],
+            "mcpEndpoint": {
+                "portName": mcp.source.mcp_endpoint.port_name,
+                "path": mcp.source.mcp_endpoint.path,
+            },
+        }
+        if mcp.source.env:
+            source["env"] = [{"name": k, "value": v} for k, v in mcp.source.env]
+    else:
+        raise TypeError(f"unsupported source {type(mcp.source)!r}")
+
+    spec: dict[str, Any] = {
+        "enabled": mcp.enabled,
+        "gatewayRef": {"name": mcp.gateway_key.name},
+        "source": source,
+        "forwardIdentity": mcp.forward_identity,
+    }
+    if mcp.description is not None:
+        spec["description"] = mcp.description
+    if mcp.tool_overrides:
+        spec["toolOverrides"] = [
+            {
+                "name": ov.name,
+                "readOnly": ov.read_only,
+                **({"taskSupport": ov.task_support} if ov.task_support else {}),
+            }
+            for ov in mcp.tool_overrides
+        ]
+    if mcp.skill_refs:
+        spec["skillRefs"] = [
+            {"name": ref.name, **({"key": ref.key} if ref.key else {})}
+            for ref in mcp.skill_refs
+        ]
+    if mcp.web_exposures:
+        exposures = []
+        for exp in mcp.web_exposures:
+            item: dict[str, Any] = {
+                "name": exp.name,
+                "portName": exp.port_name,
+                "hostname": exp.hostname,
+                "paths": list(exp.paths),
+            }
+            if exp.gateway_ref is not None:
+                item["gatewayRef"] = {
+                    "name": exp.gateway_ref.name,
+                    **(
+                        {"namespace": exp.gateway_ref.namespace}
+                        if exp.gateway_ref.namespace
+                        else {}
+                    ),
+                    **(
+                        {"sectionName": exp.gateway_ref.section_name}
+                        if exp.gateway_ref.section_name
+                        else {}
+                    ),
+                }
+            if exp.annotations:
+                item["annotations"] = dict(exp.annotations)
+            if exp.public_base_url_env:
+                item["publicBaseUrlEnv"] = exp.public_base_url_env
+            exposures.append(item)
+        spec["webExposures"] = exposures
+
+    return {
+        "apiVersion": "vmcp.io/v1alpha1",
+        "kind": "VmcpMcpServer",
+        "metadata": {"name": mcp.name, "namespace": mcp.namespace},
+        "spec": spec,
+    }
+
+
+def mcp_to_public_dict(mcp: McpServerDesired) -> dict[str, Any]:
+    """JSON-friendly MCP summary for the operator control-plane API."""
+    source: dict[str, Any]
+    if isinstance(mcp.source, RemoteHttpSource):
+        source = {"type": "RemoteHttp", "url": mcp.source.url}
+        if mcp.source.bearer_secret_ref is not None:
+            source["bearerSecretRef"] = {
+                "name": mcp.source.bearer_secret_ref.name,
+                "key": mcp.source.bearer_secret_ref.key,
+            }
+    else:
+        source = {
+            "type": "ContainerImage",
+            "image": mcp.source.image,
+            "ports": [
+                {
+                    "name": p.name,
+                    "containerPort": p.container_port,
+                    "protocol": p.protocol,
+                }
+                for p in mcp.source.ports
+            ],
+            "mcpEndpoint": {
+                "portName": mcp.source.mcp_endpoint.port_name,
+                "path": mcp.source.mcp_endpoint.path,
+            },
+        }
+    return {
+        "namespace": mcp.namespace,
+        "name": mcp.name,
+        "gateway": mcp.gateway_key.as_str(),
+        "enabled": mcp.enabled,
+        "description": mcp.description,
+        "forwardIdentity": mcp.forward_identity,
+        "source": source,
+    }
