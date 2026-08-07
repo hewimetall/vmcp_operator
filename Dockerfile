@@ -17,6 +17,7 @@ RUN apt-get update \
         ca-certificates \
         curl \
         git \
+        libssl-dev \
         pkg-config \
  && rm -rf /var/lib/apt/lists/*
 
