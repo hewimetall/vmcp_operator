@@ -46,12 +46,12 @@ jobs:
           version: v4.2.3
       - name: Lint and template
         run: |
+          set -euo pipefail
           helm lint charts/vmcp-operator
           helm template test charts/vmcp-operator --namespace vmcp-system >/tmp/out.yaml
-          ! rg -n 'kind: Deployment' /tmp/out.yaml | rg -i 'vmcp[^-]|name: vmcp$' || true
-          # Chart must contain operator Deployment but never a bare vmcp app Deployment template.
-          rg -n 'app.kubernetes.io/component: operator' /tmp/out.yaml
-          if rg -n 'containerPort: 8080' -n /tmp/out.yaml >/dev/null; then
+          # Chart must contain operator Deployment (grep is available on ubuntu-latest).
+          grep -n 'app.kubernetes.io/component: operator' /tmp/out.yaml
+          if grep -n 'containerPort: 8080' /tmp/out.yaml >/dev/null; then
             echo "operator dashboard port present"
           fi
           test -f charts/vmcp-operator/crds/vmcpgateway.yaml
