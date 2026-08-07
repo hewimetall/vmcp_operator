@@ -1,13 +1,15 @@
 # syntax=docker/dockerfile:1.7
 #
 # Multi-stage build for vmcp-operator (free-threaded CPython 3.15t + PyO3).
-# Pattern mirrors hewimetall/vmcp (build → runtime target for GHCR).
+# Release shape mirrors hewimetall/vmcp (Dockerfile target `runtime` → GHCR).
 #
+# Official CPython Docker tags do not ship 3.15t; install via uv standalone.
 #   docker build --target runtime -t ghcr.io/hewimetall/vmcp_operator:local .
-#   docker run --rm ghcr.io/hewimetall/vmcp_operator:local --help   # fails closed without kube
 #
 
-FROM ghcr.io/astral-sh/uv:python3.15-bookworm-slim AS build
+FROM debian:bookworm-slim AS build
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
