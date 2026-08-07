@@ -10,18 +10,24 @@ spec:
   masterPasswordSecretRef:
     name: main-admin-password
     key: password
+  # Optional override when publicRoute.hostname is not the real public URL.
+  # publicBaseUrl: https://mcp.example.com
   publicRoute:
     hostname: main.example.com
     gatewayRef:
       name: kgateway
       namespace: gateway-system
       sectionName: https
+    # Default true — strip client-forged Authentik / hop headers at the edge.
+    stripClientIdentityHeaders: true
   adminRoute:
     hostname: admin-main.example.com
     gatewayRef:
       name: kgateway
       namespace: gateway-system
       sectionName: https
+    # Default true when forwardAuthSecretRef is set — inject hop header at edge.
+    injectForwardAuthHeader: true
   auth:
     enabled: true
     provider: authentik

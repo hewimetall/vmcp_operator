@@ -15,6 +15,10 @@
 | AuthFacade `local` \| `authentik` | `VmcpGateway.spec.auth` → `/config/vmcp.toml` |
 | Admin auth `none` \| `basic` \| `authentik` | `spec.auth.admin` |
 | Hop trust (`trusted_proxies` / hop secret) | `spec.auth.authentik.trustedProxies` + `forwardAuthSecretRef` |
+| Public edge strip of client Authentik/hop headers | `publicRoute.stripClientIdentityHeaders` (default true) → HTTPRoute `RequestHeaderModifier.remove` |
+| Admin edge hop header inject | `adminRoute.injectForwardAuthHeader` (default when SecretRef set) → HTTPRoute `RequestHeaderModifier.set` from Secret |
+| `enableServiceLinks: false` on Gateway pods | always (avoids `VMCP_PORT=tcp://…` when Gateway is named `vmcp`) |
+| `public_base_url` override | `spec.publicBaseUrl` (else `https://{publicRoute.hostname}`) |
 | Proxy / tasks / gql | `spec.proxy` / `spec.tasks` / `spec.gql` → toml |
 | Admin tokens + master password | Secret mounts / `VMCP_AUTH__MASTER_PASSWORD_ARGON2` |
 | Upstream bearer `${ENV}` | `source.bearerSecretRef` → pod env |
