@@ -31,7 +31,9 @@ ENV PATH=/root/.cargo/bin:$PATH
 ENV UV_PYTHON_INSTALL_DIR=/opt/python \
     UV_LINK_MODE=copy \
     UV_COMPILE_BYTECODE=1 \
-    UV_PROJECT_ENVIRONMENT=/opt/venv
+    UV_PROJECT_ENVIRONMENT=/opt/venv \
+    VIRTUAL_ENV=/opt/venv \
+    PATH=/opt/venv/bin:/root/.cargo/bin:/usr/local/bin:/usr/bin:/bin
 
 WORKDIR /src
 COPY . .
@@ -39,10 +41,10 @@ COPY . .
 RUN uv python install 3.15t \
  && uv venv --python 3.15t /opt/venv \
  && uv sync --frozen --no-dev --no-install-project \
- && uv pip install maturin \
- && uv run --no-sync maturin build --release -o /wheels \
- && uv pip install /wheels/vmcp_operator*.whl \
- && uv pip uninstall -y maturin \
+ && uv pip install --python /opt/venv/bin/python maturin \
+ && maturin build --release -o /wheels \
+ && uv pip install --python /opt/venv/bin/python /wheels/vmcp_operator*.whl \
+ && uv pip uninstall --python /opt/venv/bin/python -y maturin \
  && /opt/venv/bin/python -c 'import sys; assert not sys._is_gil_enabled(), "GIL enabled"'
 
 # ------------------------------------------------------------------
