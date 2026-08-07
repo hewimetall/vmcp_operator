@@ -50,6 +50,7 @@ omit = [
     # Live Kubernetes clients — exercised in KWOK/e2e, not unit gates.
     "python/vmcp_operator/adapters/driven/k8s/gateway_catalog.py",
     "python/vmcp_operator/adapters/driven/k8s/mcp_catalog.py",
+    "python/vmcp_operator/adapters/driven/k8s/secret_loader.py",
 ]
 
 [tool.coverage.report]

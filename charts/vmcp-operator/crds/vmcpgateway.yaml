@@ -79,6 +79,11 @@ spec:
                     key:
                       type: string
                       default: password
+                publicBaseUrl:
+                  type: string
+                  description: >
+                    Override public_base_url in vmcp.toml. Defaults to
+                    https://{publicRoute.hostname}.
                 publicRoute:
                   type: object
                   required: [hostname, gatewayRef]
@@ -100,6 +105,13 @@ spec:
                       type: object
                       additionalProperties:
                         type: string
+                    stripClientIdentityHeaders:
+                      type: boolean
+                      default: true
+                      description: >
+                        Defence in depth: HTTPRoute RequestHeaderModifier removes
+                        client-supplied X-authentik-* and X-Vmcp-Forward-Auth on the
+                        public edge (issue #4 Gap 1).
                 adminRoute:
                   type: object
                   description: Optional distinct hostname exposing only /admin.
@@ -119,6 +131,13 @@ spec:
                       type: object
                       additionalProperties:
                         type: string
+                    injectForwardAuthHeader:
+                      type: boolean
+                      description: >
+                        When true (default if auth.authentik.forwardAuthSecretRef is
+                        set), admin HTTPRoute sets the hop header from that Secret
+                        so browser /admin passes hop trust after Authentik
+                        forward-auth (issue #4 Gap 2).
                 persistence:
                   type: object
                   properties:

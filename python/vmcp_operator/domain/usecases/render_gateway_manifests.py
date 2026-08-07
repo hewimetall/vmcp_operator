@@ -6,7 +6,11 @@ from dataclasses import dataclass
 from typing import Any
 
 from vmcp_operator.domain.models.artifacts import ArtifactBundle
-from vmcp_operator.domain.models.gateway import GatewayDesired, GatewayParentRef
+from vmcp_operator.domain.models.gateway import (
+    PUBLIC_STRIP_IDENTITY_HEADERS,
+    GatewayDesired,
+    GatewayParentRef,
+)
 from vmcp_operator.domain.models.mcp import (
     McpServerDesired,
     RemoteHttpSource,
@@ -26,6 +30,8 @@ class RenderGatewayManifests:
         gateway: GatewayDesired,
         artifacts: ArtifactBundle,
         mcps: list[McpServerDesired] | None = None,
+        *,
+        forward_auth_header_value: str | None = None,
     ) -> list[dict[str, Any]]:
         ns = gateway.key.namespace
         name = gateway.key.name
@@ -135,6 +141,9 @@ class RenderGatewayManifests:
                         },
                     },
                     "spec": {
+                        # Avoid kubelet Service env (VMCP_PORT=tcp://…) clobbering vmcp settings
+                        # when the Gateway/Service is named `vmcp` (issue #4 Gap 3).
+                        "enableServiceLinks": False,
                         "initContainers": [
                             {
                                 "name": "expand-artifacts",
@@ -171,6 +180,14 @@ class RenderGatewayManifests:
             },
         }
 
+        public_rule: dict[str, Any] = {
+            "matches": [{"path": {"type": "PathPrefix", "value": "/"}}],
+            "backendRefs": [{"name": name, "port": 8080}],
+        }
+        public_filters = _public_strip_filters(gateway)
+        if public_filters:
+            public_rule["filters"] = public_filters
+
         public_route = {
             "apiVersion": "gateway.networking.k8s.io/v1",
             "kind": "HTTPRoute",
@@ -182,39 +199,93 @@ class RenderGatewayManifests:
             "spec": {
                 "parentRefs": [_parent_ref(gateway.public_route.gateway_ref)],
                 "hostnames": [gateway.public_route.hostname],
-                "rules": [
-                    {
-                        "matches": [{"path": {"type": "PathPrefix", "value": "/"}}],
-                        "backendRefs": [{"name": name, "port": 8080}],
-                    }
-                ],
+                "rules": [public_rule],
             },
         }
+        if gateway.public_route.annotations:
+            public_route["metadata"]["annotations"] = dict(gateway.public_route.annotations)
 
         manifests = [pvc, configmap, service, deployment, public_route]
         if gateway.admin_route is not None:
-            manifests.append(
-                {
-                    "apiVersion": "gateway.networking.k8s.io/v1",
-                    "kind": "HTTPRoute",
-                    "metadata": {
-                        "name": f"{name}-admin",
-                        "namespace": ns,
-                        "labels": labels,
-                    },
-                    "spec": {
-                        "parentRefs": [_parent_ref(gateway.admin_route.gateway_ref)],
-                        "hostnames": [gateway.admin_route.hostname],
-                        "rules": [
-                            {
-                                "matches": [{"path": {"type": "PathPrefix", "value": "/admin"}}],
-                                "backendRefs": [{"name": name, "port": 8080}],
-                            }
-                        ],
-                    },
-                }
-            )
+            admin_rule: dict[str, Any] = {
+                "matches": [{"path": {"type": "PathPrefix", "value": "/admin"}}],
+                "backendRefs": [{"name": name, "port": 8080}],
+            }
+            admin_filters = _admin_hop_filters(gateway, forward_auth_header_value)
+            if admin_filters:
+                admin_rule["filters"] = admin_filters
+            admin_obj: dict[str, Any] = {
+                "apiVersion": "gateway.networking.k8s.io/v1",
+                "kind": "HTTPRoute",
+                "metadata": {
+                    "name": f"{name}-admin",
+                    "namespace": ns,
+                    "labels": labels,
+                },
+                "spec": {
+                    "parentRefs": [_parent_ref(gateway.admin_route.gateway_ref)],
+                    "hostnames": [gateway.admin_route.hostname],
+                    "rules": [admin_rule],
+                },
+            }
+            if gateway.admin_route.annotations:
+                admin_obj["metadata"]["annotations"] = dict(gateway.admin_route.annotations)
+            manifests.append(admin_obj)
         return manifests
+
+
+def _public_strip_filters(gateway: GatewayDesired) -> list[dict[str, Any]]:
+    if not gateway.public_route.strip_client_identity_headers:
+        return []
+    headers = list(PUBLIC_STRIP_IDENTITY_HEADERS)
+    ak = gateway.auth.authentik
+    for custom in (ak.username_header, ak.groups_header, ak.forward_auth_secret_header):
+        # Preserve casing from the canonical list when possible; still strip customs.
+        canon = next((h for h in headers if h.lower() == custom.lower()), None)
+        if canon is None:
+            headers.append(custom)
+    # Deduplicate case-insensitively while keeping first spelling.
+    seen: set[str] = set()
+    remove: list[str] = []
+    for header in headers:
+        key = header.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        remove.append(header)
+    return [
+        {
+            "type": "RequestHeaderModifier",
+            "requestHeaderModifier": {"remove": remove},
+        }
+    ]
+
+
+def _admin_hop_filters(
+    gateway: GatewayDesired, forward_auth_header_value: str | None
+) -> list[dict[str, Any]]:
+    route = gateway.admin_route
+    if route is None:
+        return []
+    want = route.inject_forward_auth_header
+    secret_ref = gateway.auth.authentik.forward_auth_secret_ref
+    if want is None:
+        want = secret_ref is not None
+    if not want:
+        return []
+    if not forward_auth_header_value:
+        # Reconcile could not materialize the secret; omit set rather than mint empty hop.
+        return []
+    header = gateway.auth.authentik.forward_auth_secret_header or "x-vmcp-forward-auth"
+    # Gateway API header names are typically canonicalized; use the configured spelling.
+    return [
+        {
+            "type": "RequestHeaderModifier",
+            "requestHeaderModifier": {
+                "set": [{"name": header, "value": forward_auth_header_value}],
+            },
+        }
+    ]
 
 
 def _gateway_env(

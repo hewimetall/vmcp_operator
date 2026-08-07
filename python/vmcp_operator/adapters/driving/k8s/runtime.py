@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -52,6 +53,7 @@ class OperatorRuntime:
         gateways: dict[str, GatewayDesired] | None = None,
         mcps: dict[str, list[McpServerDesired]] | None = None,
         skill_loader: Any | None = None,
+        secrets: Any | None = None,
     ) -> OperatorRuntime:
         store_g = gateways or {}
         store_m = mcps or {}
@@ -65,6 +67,7 @@ class OperatorRuntime:
             artifacts=artifacts,
             manifests=RenderGatewayManifests(),
             apply=apply,
+            secrets=secrets,
         )
         mcp_reconcile = McpReconcile(
             manifests=RenderMcpManifests(),
@@ -86,6 +89,46 @@ class OperatorRuntime:
         runtime.applier = applier  # type: ignore[attr-defined]
         return runtime
 
+    @classmethod
+    def for_cluster(cls, *, skill_loader: Any | None = None) -> OperatorRuntime:
+        """Live Kubernetes apply + CR catalogs + Secret hop materialization."""
+        from vmcp_operator.adapters.driven.k8s.gateway_catalog import Kr8sGatewayRepository
+        from vmcp_operator.adapters.driven.k8s.kr8s_applier import Kr8sServerSideApplier
+        from vmcp_operator.adapters.driven.k8s.mcp_catalog import Kr8sMcpCatalog
+        from vmcp_operator.adapters.driven.k8s.secret_loader import Kr8sSecretValueLoader
+
+        apply = ServerSideApply(
+            applier=Kr8sServerSideApplier(),
+            field_manager="vmcp-operator",
+        )
+        artifacts = ReconcileGatewayArtifacts(
+            renderer=RegistryEngine(),
+            skill_loader=skill_loader or EmptySkillLoader(),
+        )
+        catalog = Kr8sMcpCatalog()
+        gateways = Kr8sGatewayRepository()
+
+        async def _list(key: GatewayKey) -> list[McpServerDesired]:
+            return await catalog.list_for_gateway(key)
+
+        async def _get(key: GatewayKey) -> GatewayDesired | None:
+            return await gateways.get(key)
+
+        return cls(
+            gateway_reconcile=GatewayReconcile(
+                artifacts=artifacts,
+                manifests=RenderGatewayManifests(),
+                apply=apply,
+                secrets=Kr8sSecretValueLoader(),
+            ),
+            mcp_reconcile=McpReconcile(
+                manifests=RenderMcpManifests(),
+                apply=apply,
+            ),
+            list_mcps=_list,
+            get_gateway=_get,
+        )
+
 
 _RUNTIME: OperatorRuntime | None = None
 
@@ -93,7 +136,14 @@ _RUNTIME: OperatorRuntime | None = None
 def get_runtime() -> OperatorRuntime:
     global _RUNTIME
     if _RUNTIME is None:
-        _RUNTIME = OperatorRuntime.in_memory()
+        mode = os.environ.get("VMCP_OPERATOR_RUNTIME", "").lower()
+        if mode in {"memory", "inmemory", "stub"}:
+            _RUNTIME = OperatorRuntime.in_memory()
+        elif mode in {"kr8s", "cluster"} or bool(os.environ.get("KUBECONFIG")):
+            _RUNTIME = OperatorRuntime.for_cluster()
+        else:
+            # Unit tests / local without kubeconfig stay in-memory.
+            _RUNTIME = OperatorRuntime.in_memory()
     return _RUNTIME
 
 

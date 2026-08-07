@@ -41,6 +41,7 @@ def map_gateway(namespace: str, name: str, spec: dict[str, Any]) -> GatewayDesir
     tasks = spec.get("tasks") or {}
     proxy = spec.get("proxy") or {}
     gql = spec.get("gql") or {}
+    public_base = spec.get("publicBaseUrl")
     return GatewayDesired(
         key=GatewayKey(namespace=namespace, name=name),
         image=str(spec["image"]),
@@ -48,8 +49,8 @@ def map_gateway(namespace: str, name: str, spec: dict[str, Any]) -> GatewayDesir
         master_password_secret_ref=_secret_ref(
             spec["masterPasswordSecretRef"], default_key="password"
         ),
-        public_route=_route(public),
-        admin_route=_route(admin) if admin else None,
+        public_route=_route(public, role="public"),
+        admin_route=_route(admin, role="admin") if admin else None,
         persistence=PersistenceDesired(
             size=str(persistence.get("size", "5Gi")),
             storage_class_name=persistence.get("storageClassName"),
@@ -69,6 +70,7 @@ def map_gateway(namespace: str, name: str, spec: dict[str, Any]) -> GatewayDesir
         ),
         auth=_map_auth(spec.get("auth") or {}),
         skill_refs=tuple(_skill_ref(item) for item in spec.get("skillRefs") or ()),
+        public_base_url=str(public_base).strip() if public_base else None,
     )
 
 
@@ -190,9 +192,15 @@ def _secret_ref(raw: dict[str, Any], *, default_key: str = "token") -> SecretRef
     return SecretRef(name=str(raw["name"]), key=str(raw.get("key", default_key)))
 
 
-def _route(raw: dict[str, Any]) -> RouteDesired:
+def _route(raw: dict[str, Any], *, role: str) -> RouteDesired:
     ref = raw["gatewayRef"]
     annotations = tuple(sorted((str(k), str(v)) for k, v in (raw.get("annotations") or {}).items()))
+    strip = bool(raw.get("stripClientIdentityHeaders", True))
+    inject_raw = raw.get("injectForwardAuthHeader")
+    inject: bool | None = None if inject_raw is None else bool(inject_raw)
+    if role == "public":
+        # Public edge never injects the hop secret.
+        inject = False
     return RouteDesired(
         hostname=str(raw["hostname"]),
         gateway_ref=GatewayParentRef(
@@ -201,6 +209,8 @@ def _route(raw: dict[str, Any]) -> RouteDesired:
             section_name=ref.get("sectionName"),
         ),
         annotations=annotations,
+        strip_client_identity_headers=strip if role == "public" else False,
+        inject_forward_auth_header=inject,
     )
 
 

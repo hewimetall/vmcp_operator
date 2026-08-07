@@ -24,6 +24,10 @@ class RouteDesired:
     hostname: str
     gateway_ref: GatewayParentRef
     annotations: tuple[tuple[str, str], ...] = ()
+    # Public: strip client-forged Authentik / hop headers (defence in depth).
+    strip_client_identity_headers: bool = True
+    # Admin: set hop header from forwardAuthSecretRef (None = auto when secret set).
+    inject_forward_auth_header: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,4 +125,18 @@ class GatewayDesired:
     gql: GqlDesired = GqlDesired()
     auth: AuthDesired = AuthDesired()
     skill_refs: tuple[SkillRef, ...] = ()
+    # Override derived ``https://{publicRoute.hostname}`` in vmcp.toml.
+    public_base_url: str | None = None
     generation: int = 1
+
+
+# Headers clients must never supply on the public edge (issue #4 Gap 1).
+PUBLIC_STRIP_IDENTITY_HEADERS: tuple[str, ...] = (
+    "X-authentik-username",
+    "X-authentik-groups",
+    "X-authentik-uid",
+    "X-authentik-name",
+    "X-authentik-email",
+    "X-authentik-entitlements",
+    "X-Vmcp-Forward-Auth",
+)
