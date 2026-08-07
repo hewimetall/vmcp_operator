@@ -59,10 +59,35 @@ Supported utterances:
 
 - `add|create|добавь mcp <name> to|в <ns>/<gw> url <url> [forward identity] [description …]`
 - `add mcp <name> to <ns>/<gw> image <image>`
+- `add|подключи mcp <name> to|к <ns>/<gw> via|через vmcp-proxy <peerNs>/<peerGw>`
 - `remove|delete|удали mcp <name> from|из <ns>/<gw>`
 - `update|обнови mcp <name> on|на <ns>/<gw> set forwardIdentity=true url=…`
 - `list|список mcps on|для <ns>/<gw>`
 - `get|покажи mcp <name> on|на <ns>/<gw>`
+
+## Peer vmcp via `VmcpProxy`
+
+One Gateway can mount another Gateway’s `[proxy]` surface (`/mcp-proxy` by default)
+as an HTTP upstream — operator-level peering, not `vmcp add` inside a pod.
+
+```yaml
+source:
+  type: VmcpProxy
+  peerGatewayRef:
+    name: code          # peer VmcpGateway
+    namespace: team-a    # optional; defaults to consumer namespace
+  path: /mcp-proxy      # must match peer spec.proxy.path
+```
+
+Resolved ClusterIP URL: `http://code.team-a.svc:8080/mcp-proxy`.
+
+Requirements:
+
+1. Peer `spec.proxy.enabled: true`
+2. Consumer registers a `VmcpMcpServer` with `source.type: VmcpProxy`
+3. Optional `bearerSecretRef` + `forwardIdentity: true` for authenticated/internal hops
+
+Samples: `deploy/samples/mcp-vmcp-proxy.yaml`, `deploy/profiles/other/mcp-code-via-proxy.yaml`.
 
 ## Env
 

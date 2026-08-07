@@ -77,6 +77,8 @@
             Examples:
             <code>add mcp docs to team-a/main url https://docs.example.com/mcp</code>
             ·
+            <code>подключи mcp code-peer к team-a/main через vmcp-proxy team-a/code</code>
+            ·
             <code>удали mcp docs из team-a/main</code>
             ·
             <code>list mcps on team-a/main</code>

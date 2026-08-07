@@ -205,6 +205,11 @@ async def test_update_remove_missing_and_wrong_gateway() -> None:
             ),
             {"bearerSecretRef": {"name": "b"}},
         )
+    with pytest.raises(ValueError, match="path can only"):
+        apply_mcp_fields(
+            mcp_from_add_body(key, "r", {"source": {"type": "RemoteHttp", "url": "https://a"}}),
+            {"path": "/x"},
+        )
     with pytest.raises(ValueError, match="must match gateway namespace"):
         mcp_to_crd(
             McpServerDesired(

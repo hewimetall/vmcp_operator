@@ -11,6 +11,7 @@
 | --- | --- |
 | HTTP `registry.json` + sidecars + skills | `VmcpMcpServer` → artifact ConfigMap |
 | `forward_identity` (per upstream) | `VmcpMcpServer.spec.forwardIdentity` |
+| Peer Gateway via `/mcp-proxy` | `source.type: VmcpProxy` (peer must `proxy.enabled`) |
 | AuthFacade `local` \| `authentik` | `VmcpGateway.spec.auth` → `/config/vmcp.toml` |
 | Admin auth `none` \| `basic` \| `authentik` | `spec.auth.admin` |
 | Hop trust (`trusted_proxies` / hop secret) | `spec.auth.authentik.trustedProxies` + `forwardAuthSecretRef` |
@@ -32,3 +33,4 @@ When `forwardAuth: true`, set `trustedProxies` and/or `forwardAuthSecretRef` (vm
 - Authentik + hop trust: `deploy/samples/gateway-authentik.yaml`
 - External SaaS upstream: `deploy/samples/mcp-server.yaml` (`forwardIdentity: false`)
 - Internal adapter: `deploy/samples/mcp-internal.yaml` (`forwardIdentity: true`)
+- Peer via vmcp-proxy: `deploy/samples/mcp-vmcp-proxy.yaml`

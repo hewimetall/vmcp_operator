@@ -25,9 +25,11 @@ from vmcp_operator.domain.models.mcp import (
     ContainerImageSource,
     McpEndpoint,
     McpServerDesired,
+    McpSource,
     NamedPort,
     RemoteHttpSource,
     ToolOverrideDesired,
+    VmcpProxySource,
     WebExposureDesired,
 )
 
@@ -74,7 +76,7 @@ def map_mcp(namespace: str, name: str, spec: dict[str, Any]) -> McpServerDesired
     source = spec["source"]
     source_type = source["type"]
     if source_type == "RemoteHttp":
-        mapped_source: ContainerImageSource | RemoteHttpSource = RemoteHttpSource(
+        mapped_source: McpSource = RemoteHttpSource(
             url=str(source["url"]),
             bearer_secret_ref=(
                 _secret_ref(source["bearerSecretRef"])
@@ -103,6 +105,23 @@ def map_mcp(namespace: str, name: str, spec: dict[str, Any]) -> McpServerDesired
                 (str(item["name"]), str(item.get("value", "")))
                 for item in source.get("env") or ()
                 if "name" in item
+            ),
+        )
+    elif source_type == "VmcpProxy":
+        peer_raw = source.get("peerGatewayRef") or {}
+        if not peer_raw.get("name"):
+            raise ValueError("VmcpProxy source requires peerGatewayRef.name")
+        mapped_source = VmcpProxySource(
+            peer=GatewayKey(
+                namespace=str(peer_raw.get("namespace") or namespace),
+                name=str(peer_raw["name"]),
+            ),
+            path=str(source.get("path") or "/mcp-proxy"),
+            port=int(source.get("port") or 8080),
+            bearer_secret_ref=(
+                _secret_ref(source["bearerSecretRef"])
+                if source.get("bearerSecretRef")
+                else None
             ),
         )
     else:
@@ -243,6 +262,21 @@ def mcp_to_crd(mcp: McpServerDesired) -> dict[str, Any]:
         }
         if mcp.source.env:
             source["env"] = [{"name": k, "value": v} for k, v in mcp.source.env]
+    elif isinstance(mcp.source, VmcpProxySource):
+        peer: dict[str, str] = {"name": mcp.source.peer.name}
+        if mcp.source.peer.namespace != mcp.namespace:
+            peer["namespace"] = mcp.source.peer.namespace
+        source = {
+            "type": "VmcpProxy",
+            "peerGatewayRef": peer,
+            "path": mcp.source.path,
+            "port": mcp.source.port,
+        }
+        if mcp.source.bearer_secret_ref is not None:
+            source["bearerSecretRef"] = {
+                "name": mcp.source.bearer_secret_ref.name,
+                "key": mcp.source.bearer_secret_ref.key,
+            }
     else:
         raise TypeError(f"unsupported source {type(mcp.source)!r}")
 
@@ -311,6 +345,19 @@ def mcp_to_public_dict(mcp: McpServerDesired) -> dict[str, Any]:
     source: dict[str, Any]
     if isinstance(mcp.source, RemoteHttpSource):
         source = {"type": "RemoteHttp", "url": mcp.source.url}
+        if mcp.source.bearer_secret_ref is not None:
+            source["bearerSecretRef"] = {
+                "name": mcp.source.bearer_secret_ref.name,
+                "key": mcp.source.bearer_secret_ref.key,
+            }
+    elif isinstance(mcp.source, VmcpProxySource):
+        source = {
+            "type": "VmcpProxy",
+            "peerGateway": mcp.source.peer.as_str(),
+            "path": mcp.source.path,
+            "port": mcp.source.port,
+            "clusterUrl": mcp.source.cluster_url(),
+        }
         if mcp.source.bearer_secret_ref is not None:
             source["bearerSecretRef"] = {
                 "name": mcp.source.bearer_secret_ref.name,

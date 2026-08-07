@@ -7,7 +7,11 @@ from typing import Any
 
 from vmcp_operator.domain.models.artifacts import ArtifactBundle
 from vmcp_operator.domain.models.gateway import GatewayDesired, GatewayParentRef
-from vmcp_operator.domain.models.mcp import McpServerDesired, RemoteHttpSource
+from vmcp_operator.domain.models.mcp import (
+    McpServerDesired,
+    RemoteHttpSource,
+    VmcpProxySource,
+)
 from vmcp_operator.domain.usecases.render_gateway_config import render_gateway_config
 
 # Any retained for Kubernetes object dictionaries only.
@@ -247,15 +251,18 @@ def _gateway_env(
         if not mcp.enabled or mcp.gateway_key != gateway.key:
             continue
         source = mcp.source
-        if isinstance(source, RemoteHttpSource) and source.bearer_secret_ref is not None:
+        bearer_ref = None
+        if isinstance(source, (RemoteHttpSource, VmcpProxySource)):
+            bearer_ref = source.bearer_secret_ref
+        if bearer_ref is not None:
             env_name = f"VMCP_BEARER_{mcp.name.upper().replace('-', '_')}"
             env.append(
                 {
                     "name": env_name,
                     "valueFrom": {
                         "secretKeyRef": {
-                            "name": source.bearer_secret_ref.name,
-                            "key": source.bearer_secret_ref.key,
+                            "name": bearer_ref.name,
+                            "key": bearer_ref.key,
                         }
                     },
                 }

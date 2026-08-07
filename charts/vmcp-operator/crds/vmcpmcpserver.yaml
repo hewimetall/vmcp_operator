@@ -77,12 +77,34 @@ spec:
                   properties:
                     type:
                       type: string
-                      enum: [ContainerImage, RemoteHttp]
+                      enum: [ContainerImage, RemoteHttp, VmcpProxy]
                     image:
                       type: string
                     url:
                       type: string
                       description: Remote Streamable HTTP URL for RemoteHttp.
+                    peerGatewayRef:
+                      type: object
+                      required: [name]
+                      description: >
+                        Peer VmcpGateway whose [proxy] surface is mounted as this
+                        upstream (ClusterIP http://{name}.{ns}.svc:port{path}).
+                      properties:
+                        name:
+                          type: string
+                          minLength: 1
+                        namespace:
+                          type: string
+                          description: Defaults to the consumer MCP namespace.
+                    path:
+                      type: string
+                      default: /mcp-proxy
+                      description: Peer proxy MCP path (must match peer spec.proxy.path).
+                    port:
+                      type: integer
+                      minimum: 1
+                      maximum: 65535
+                      default: 8080
                     bearerSecretRef:
                       type: object
                       properties:

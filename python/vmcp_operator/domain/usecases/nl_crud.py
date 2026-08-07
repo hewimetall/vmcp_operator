@@ -24,9 +24,18 @@ from vmcp_operator.domain.usecases.manage_mcp import (
 )
 
 _GATEWAY = r"(?P<gateway>[\w.-]+/[\w.-]+)"
+_PEER = r"(?P<peer>[\w.-]+/[\w.-]+)"
 _NAME = r"(?P<name>[\w-]+)"
 
 # Cyrillic keywords are intentional (RU NL surface).
+_ADD_PROXY = re.compile(
+    rf"^(?:add|create|attach|добавь|добавить|создай|создать|подключи|подключить)\s+mcp\s+"
+    rf"{_NAME}\s+(?:to|on|in|в|на|к)\s+{_GATEWAY}\s+"
+    rf"(?:via\s+|через\s+)?vmcp-proxy\s+{_PEER}"
+    rf"(?:\s+forward[_ ]?identity(?:=(?P<fi>true|false|да|нет))?)?"
+    rf"(?:\s+(?P<desc_kw>desc|description|описание)\s+(?P<description>.+))?$",
+    re.IGNORECASE,
+)
 _ADD = re.compile(
     rf"^(?:add|create|добавь|добавить|создай|создать)\s+mcp\s+{_NAME}\s+"
     rf"(?:to|on|в|на)\s+{_GATEWAY}\s+"
@@ -76,8 +85,32 @@ class NlCrud:
         if not text:
             raise ValueError("utterance must be non-empty")
 
+        if m := _ADD_PROXY.match(text):
+            fields = {
+                "source": {
+                    "type": "VmcpProxy",
+                    "peerGatewayRef": {
+                        "namespace": m.group("peer").split("/", 1)[0],
+                        "name": m.group("peer").split("/", 1)[1],
+                    },
+                }
+            }
+            if m.group("fi") is not None:
+                fields["forwardIdentity"] = _as_bool(m.group("fi"))
+            elif "forward" in text.lower() and "identity" in text.lower():
+                fields["forwardIdentity"] = True
+            if m.group("description"):
+                fields["description"] = m.group("description").strip()
+            return NlIntent(
+                mutation=McpMutation.ADD,
+                gateway=_gateway(m.group("gateway")),
+                name=m.group("name"),
+                fields=fields,
+                dry_run=dry_run,
+            )
+
         if m := _ADD.match(text):
-            fields: dict[str, Any] = {}
+            fields = {}
             if m.group("url"):
                 fields["source"] = {"type": "RemoteHttp", "url": m.group("url")}
             else:
@@ -130,7 +163,8 @@ class NlCrud:
             )
 
         raise ValueError(
-            "unrecognized NL CRUD utterance; expected add/remove/update/list/get mcp …"
+            "unrecognized NL CRUD utterance; expected add/remove/update/list/get mcp "
+            "(or add … via vmcp-proxy …)"
         )
 
     def intent_from_structured(self, body: dict[str, Any]) -> NlIntent:
