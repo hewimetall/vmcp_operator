@@ -5,6 +5,27 @@ from unittest.mock import patch
 import pytest
 
 
+def test_consume_operator_argv_maps_watch_namespaces(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("VMCP_OPERATOR_WATCH_NAMESPACES", raising=False)
+    from vmcp_operator.__main__ import _consume_operator_argv
+
+    out = _consume_operator_argv(
+        ["vmcp-operator", "--watch-namespaces=team-a,team-b", "--liveness=http://:8081/"]
+    )
+    assert out == ["vmcp-operator", "--liveness=http://:8081/"]
+    assert __import__("os").environ["VMCP_OPERATOR_WATCH_NAMESPACES"] == "team-a,team-b"
+
+    monkeypatch.delenv("VMCP_OPERATOR_WATCH_NAMESPACES", raising=False)
+    out2 = _consume_operator_argv(
+        ["vmcp-operator", "--watch-namespaces", "shared"]
+    )
+    assert out2 == ["vmcp-operator"]
+    assert __import__("os").environ["VMCP_OPERATOR_WATCH_NAMESPACES"] == "shared"
+    assert _consume_operator_argv([]) == []
+
+
 def test_main_requires_dashboard_password(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("VMCP_OPERATOR_DASHBOARD_ENABLED", "true")
     monkeypatch.delenv("VMCP_OPERATOR_DASHBOARD_PASSWORD", raising=False)

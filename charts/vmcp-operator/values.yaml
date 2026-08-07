@@ -1,6 +1,8 @@
 # Install-time parameters. Production values are supplied at helm install/upgrade.
+# Default image is published to GHCR on tag `v*` via `.github/workflows/release.yml`
+# (same pattern as hewimetall/vmcp).
 image:
-  repository: registry.example.com/vmcp-operator
+  repository: ghcr.io/hewimetall/vmcp_operator
   tag: "0.1.0"
   pullPolicy: IfNotPresent
 

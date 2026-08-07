@@ -21,10 +21,10 @@ NetworkPolicy, or ServiceMonitor.
 ## Install
 
 ```bash
+# Image: ghcr.io/hewimetall/vmcp_operator (published on git tag v* via release.yml)
 # First install applies CRDs from charts/vmcp-operator/crds/
 helm upgrade -i vmcp-operator ./charts/vmcp-operator \
   --namespace vmcp-system --create-namespace \
-  --set image.repository=registry.example.com/vmcp-operator \
   --set image.tag=0.1.0 \
   --set 'watchNamespaces={team-a,team-b,shared}' \
   --set 'policy.allowedImagePrefixes={registry.example.com/ai}'

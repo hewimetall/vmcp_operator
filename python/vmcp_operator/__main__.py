@@ -8,8 +8,35 @@ import sys
 from typing import Any
 
 
+def _consume_operator_argv(argv: list[str]) -> list[str]:
+    """Map chart/container flags onto env; leave argv kopf-safe.
+
+    The Helm Deployment passes ``--watch-namespaces=…`` as container args while
+    the controller reads ``VMCP_OPERATOR_WATCH_NAMESPACES``. Consume our flags
+    before ``kopf.run`` so unknown options do not abort startup.
+    """
+    if not argv:
+        return argv
+    kept = [argv[0]]
+    i = 1
+    while i < len(argv):
+        arg = argv[i]
+        if arg.startswith("--watch-namespaces="):
+            os.environ["VMCP_OPERATOR_WATCH_NAMESPACES"] = arg.split("=", 1)[1]
+            i += 1
+            continue
+        if arg == "--watch-namespaces" and i + 1 < len(argv):
+            os.environ["VMCP_OPERATOR_WATCH_NAMESPACES"] = argv[i + 1]
+            i += 2
+            continue
+        kept.append(arg)
+        i += 1
+    return kept
+
+
 def main() -> None:
     """Start the operator with eager handler wiring."""
+    sys.argv = _consume_operator_argv(sys.argv)
     os.environ.setdefault("PYTHON_LAZY_IMPORTS", "normal")
     if sys._is_gil_enabled():
         raise SystemExit("vmcp-operator requires free-threaded CPython (GIL is enabled)")

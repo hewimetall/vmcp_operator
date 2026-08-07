@@ -25,6 +25,7 @@ def test_helm_lint_and_template_operator_only() -> None:
     ).stdout
     assert "kind: Deployment" in rendered
     assert "app.kubernetes.io/component: operator" in rendered
+    assert "ghcr.io/hewimetall/vmcp_operator" in rendered
     # Chart must never template a bare vmcp application Deployment.
     assert "name: vmcp\n" not in rendered
     assert "containerPort: 8080" in rendered

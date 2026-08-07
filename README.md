@@ -36,6 +36,24 @@ uv run maturin develop
 make test-py test-rs helm-lint
 ```
 
+## Release image (GHCR)
+
+Same release workflow shape as [hewimetall/vmcp](https://github.com/hewimetall/vmcp):
+
+```bash
+# Tag push → build Dockerfile target `runtime` → ghcr.io/hewimetall/vmcp_operator:<semver>
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Local build:
+
+```bash
+docker build --target runtime -t ghcr.io/hewimetall/vmcp_operator:local .
+```
+
+Chart default image: `ghcr.io/hewimetall/vmcp_operator`.
+
 Phase −1 compatibility results: [docs/phase-minus-one.md](docs/phase-minus-one.md).
 
 Gateway contract (vmcp **≥1.2** AuthFacade / hop trust / `forward_identity`):
