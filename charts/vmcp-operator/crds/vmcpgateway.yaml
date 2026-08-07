@@ -63,7 +63,12 @@ spec:
                     name:
                       type: string
                       minLength: 1
-                  description: Secret with tokens.json for bootstrap/admin API access.
+                    key:
+                      type: string
+                      default: token
+                  description: >
+                    Secret with tokens.json body (key default `token`) for
+                    bootstrap/admin API access; mounted at /secrets/tokens.json.
                 masterPasswordSecretRef:
                   type: object
                   required: [name]
@@ -131,8 +136,10 @@ spec:
                   properties:
                     maxComplexity:
                       type: integer
+                      default: 1000
                     maxDepth:
                       type: integer
+                      default: 10
                 proxy:
                   type: object
                   properties:
@@ -141,6 +148,7 @@ spec:
                       default: false
                     path:
                       type: string
+                      default: /mcp-proxy
                 tasks:
                   type: object
                   properties:
@@ -150,6 +158,86 @@ spec:
                     maxConcurrent:
                       type: integer
                       minimum: 1
+                      default: 1
+                auth:
+                  type: object
+                  description: >
+                    vmcp AuthFacade (≥1.1) and hop-trust knobs (≥1.2). Secrets for
+                    master password / tokens / forward-auth hop secret are mounted
+                    into the Gateway pod; non-secret settings are rendered to vmcp.toml.
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: true
+                    provider:
+                      type: string
+                      enum: [local, authentik]
+                      default: local
+                    admin:
+                      type: object
+                      properties:
+                        mode:
+                          type: string
+                          enum: [none, basic, authentik]
+                          default: basic
+                        requiredGroups:
+                          type: array
+                          items:
+                            type: string
+                          description: Exact Authentik groups allowed for /admin when mode=authentik.
+                    authentik:
+                      type: object
+                      description: Required when provider=authentik (and/or admin.mode=authentik).
+                      properties:
+                        issuer:
+                          type: string
+                        jwksUrl:
+                          type: string
+                        audiences:
+                          type: array
+                          items:
+                            type: string
+                        acceptBearer:
+                          type: boolean
+                          default: true
+                        forwardAuth:
+                          type: boolean
+                          default: true
+                        usernameHeader:
+                          type: string
+                          default: x-authentik-username
+                        groupsHeader:
+                          type: string
+                          default: x-authentik-groups
+                        groupsClaim:
+                          type: string
+                          default: groups
+                        groupScopes:
+                          type: object
+                          additionalProperties:
+                            type: string
+                          description: Exact Authentik group → space-separated MCP scopes.
+                        trustedProxies:
+                          type: array
+                          items:
+                            type: string
+                          description: >
+                            CIDRs of trusted forward-auth peers (required alone or with
+                            forwardAuthSecretRef when forwardAuth=true).
+                        forwardAuthSecretRef:
+                          type: object
+                          required: [name]
+                          properties:
+                            name:
+                              type: string
+                              minLength: 1
+                            key:
+                              type: string
+                              default: secret
+                          description: Shared hop secret injected as VMCP_AUTH__AUTHENTIK__FORWARD_AUTH_SECRET.
+                        forwardAuthSecretHeader:
+                          type: string
+                          default: x-vmcp-forward-auth
                 skillRefs:
                   type: array
                   items:

@@ -4,7 +4,8 @@ metadata:
   name: main
   namespace: team-a
 spec:
-  image: registry.example.com/ai/vmcp:0.1.0
+  # Prefer a vmcp ≥1.2 image for AuthFacade + hop trust + forward_identity.
+  image: registry.example.com/ai/vmcp:1.2.0
   adminTokenSecretRef:
     name: main-admin-tokens
   masterPasswordSecretRef:
@@ -23,3 +24,8 @@ spec:
     enabled: false
   proxy:
     enabled: false
+  auth:
+    enabled: true
+    provider: local
+    admin:
+      mode: basic

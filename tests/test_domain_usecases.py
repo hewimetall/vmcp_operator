@@ -107,6 +107,7 @@ async def test_reconcile_artifacts_builds_remote_and_managed() -> None:
                 ports=(NamedPort(name="http", container_port=8766),),
                 mcp_endpoint=McpEndpoint(port_name="http", path="/mcp"),
             ),
+            forward_identity=True,
         ),
     ]
     usecase = ReconcileGatewayArtifacts(renderer=RegistryEngine(), skill_loader=FakeSkills())
@@ -115,6 +116,7 @@ async def test_reconcile_artifacts_builds_remote_and_managed() -> None:
     assert "context7" in registry
     assert "architect-c4" in registry
     assert "team-a.svc:8766/mcp" in registry
+    assert '"forward_identity": true' in registry
     assert "skills/research_docs.yaml" in bundle.files
 
 
@@ -158,8 +160,10 @@ async def test_reconcile_artifacts_remote_without_bearer() -> None:
     ]
     usecase = ReconcileGatewayArtifacts(renderer=RegistryEngine(), skill_loader=FakeSkills())
     bundle = await usecase.execute(gateway, mcps)
-    assert "open" in bundle.files["registry.json"].data
-    assert '"bearer": null' in bundle.files["registry.json"].data
+    registry = bundle.files["registry.json"].data
+    assert "open" in registry
+    assert "bearer" not in registry
+    assert "forward_identity" not in registry
 
 
 @pytest.mark.asyncio

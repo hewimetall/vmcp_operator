@@ -1,0 +1,21 @@
+apiVersion: vmcp.io/v1alpha1
+kind: VmcpMcpServer
+metadata:
+  name: code-via-proxy
+  namespace: team-a
+  labels:
+    vmcp.io/profile: other
+  annotations:
+    vmcp.io/note: Peer into profile `code` through vmcp-proxy (requires code.proxy.enabled).
+spec:
+  enabled: true
+  description: code gateway tools via vmcp-proxy
+  gatewayRef:
+    name: other
+  forwardIdentity: true
+  source:
+    type: VmcpProxy
+    peerGatewayRef:
+      name: code
+      namespace: team-a
+    path: /mcp-proxy

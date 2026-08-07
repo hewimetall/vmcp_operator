@@ -1,0 +1,24 @@
+# Attach peer Gateway `code` into consumer Gateway `main` through vmcp-proxy.
+# Peer must have spec.proxy.enabled=true (see deploy/profiles/code/gateway.yaml).
+apiVersion: vmcp.io/v1alpha1
+kind: VmcpMcpServer
+metadata:
+  name: code-peer
+  namespace: team-a
+spec:
+  enabled: true
+  description: Peer vmcp `code` exposed via its /mcp-proxy surface
+  gatewayRef:
+    name: main
+  # Internal peer — forward caller identity across the hop.
+  forwardIdentity: true
+  source:
+    type: VmcpProxy
+    peerGatewayRef:
+      name: code
+      # namespace defaults to this MCP's namespace (team-a)
+    path: /mcp-proxy
+    # Optional service credential for the peer's auth facade:
+    # bearerSecretRef:
+    #   name: code-mcp-use
+    #   key: token

@@ -19,5 +19,5 @@ serde_json = "1"
 serde_yaml = "0.9"
 sha2 = "0.10"
 thiserror = "2"
-# Pinned exact vmcp main SHA from the contract audit (do not float).
-vmcp-registry = { git = "https://github.com/hewimetall/vmcp", rev = "f6664e6be8d6926b7bd81683eb47981736d642c3" }
+# Pinned to vmcp v1.2.0 (AuthFacade + hop trust + forward_identity).
+vmcp-registry = { git = "https://github.com/hewimetall/vmcp", rev = "450f7426477b78b554b2463cb13a5c2268eab000" }

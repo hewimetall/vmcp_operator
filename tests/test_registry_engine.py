@@ -32,11 +32,17 @@ def test_render_registry_sorted_http() -> None:
                 url="https://context7.example/mcp",
                 bearer_env="CONTEXT7_API_KEY",
             ),
+            UpstreamDesired(
+                name="stand_api",
+                url="http://stand-api.svc/mcp",
+                forward_identity=True,
+            ),
         ]
     )
     assert '"name": "context7"' in text
     assert '"transport": "http"' in text
     assert "${CONTEXT7_API_KEY}" in text
+    assert '"forward_identity": true' in text
     assert digest
 
 

@@ -3,7 +3,8 @@
 
 Covers multi-gateway isolation, architect web exposure independence,
 checksum reconnect planning, MCP delete/unregister registry filtering,
-and dashboard environment listing + mcp:use issuance.
+dashboard environment listing + mcp:use issuance, and VmcpProxy peering
+(consumer registry upstream URL → peer /mcp-proxy ClusterIP).
 """
 
 from __future__ import annotations
@@ -148,6 +149,10 @@ async def _dashboard_check(gateways) -> dict:
 
     store = Store(gateways)
     issuer = Issuer()
+    from vmcp_operator.adapters.driven.k8s.mcp_catalog import InMemoryMcpCatalog
+    from vmcp_operator.adapters.driving.dashboard.control_plane import build_control_plane
+
+    control = build_control_plane(gateways=store, catalog=InMemoryMcpCatalog())
     app = create_app(
         auth=DashboardAuth(username="admin", password="secret"),
         list_environments=ListEnvironments(
@@ -155,6 +160,12 @@ async def _dashboard_check(gateways) -> dict:
             phases={g.key.as_str(): "Ready" for g in gateways},
         ),
         issue_use_token=IssueUseToken(gateways=store, issuer=issuer),
+        list_mcps=control.list_mcps,
+        get_mcp=control.get_mcp,
+        add_mcp=control.add_mcp,
+        update_mcp=control.update_mcp,
+        remove_mcp=control.remove_mcp,
+        nl_crud=control.nl_crud,
     )
     from aiohttp.test_utils import TestClient, TestServer
 
@@ -172,7 +183,7 @@ async def _dashboard_check(gateways) -> dict:
         envs = await resp.json()
         assert resp.status == 200
         keys = sorted(row["key"] for row in envs)
-        assert keys == ["team-a/code", "team-a/resurche"]
+        assert keys == ["team-a/code", "team-a/other", "team-a/resurche"]
         assert all(row.get("adminUrl") for row in envs)
         resp = await client.post(
             "/api/tokens",
@@ -210,6 +221,24 @@ async def main() -> int:
 
     resurche = await _apply_profile("resurche", apply)
     code = await _apply_profile("code", apply)
+    other = await _apply_profile("other", apply)
+
+    # VmcpProxy: other mounts code's [proxy] surface; registry must point at ClusterIP /mcp-proxy.
+    peer_url = "http://code.team-a.svc:8080/mcp-proxy"
+    other_proxy = next(m for m in other["mcps"] if m.name == "code-via-proxy")
+    assert type(other_proxy.source).__name__ == "VmcpProxySource"
+    assert other_proxy.source.cluster_url() == peer_url
+    other_bundle = await ReconcileGatewayArtifacts(
+        renderer=RegistryEngine(),
+        skill_loader=ProfileSkills("other"),
+    ).execute(other["gateway"], other["mcps"])
+    other_registry = other_bundle.files["registry.json"].data
+    assert peer_url in other_registry, other_registry
+    assert "code-via-proxy" in other_registry
+    assert "forward_identity" in other_registry
+    # Peer Gateway itself must advertise proxy.enabled (profile contract).
+    assert code["gateway"].proxy.enabled is True
+    assert code["gateway"].proxy.path == "/mcp-proxy"
 
     # Isolation: admin skill mutation plan for resurche must not delete code skills.
     resurche_plan = PlanSkillsSync().execute(
@@ -277,7 +306,9 @@ async def main() -> int:
         assert "Bearer " not in joined
         assert "sk-" not in joined
 
-    dashboard = await _dashboard_check([resurche["gateway"], code["gateway"]])
+    dashboard = await _dashboard_check(
+        [resurche["gateway"], code["gateway"], other["gateway"]]
+    )
 
     # Level reconcile recovery: re-run gateway reconcile after "operator restart".
     recovered = await GatewayReconcile(
@@ -292,15 +323,18 @@ async def main() -> int:
 
     out = {
         "cluster": "kwok" if use_cluster else "memory",
-        "gateways": ["team-a/resurche", "team-a/code"],
+        "gateways": ["team-a/resurche", "team-a/code", "team-a/other"],
         "resurcheObjects": resurche["gw_result"]["objects"],
         "codeObjects": code["gw_result"]["objects"],
+        "otherObjects": other["gw_result"]["objects"],
         "architectWebIndependent": True,
         "reconnect": plan.phase,
         "skillsIsolation": True,
         "dashboard": dashboard,
         "levelReconcileRecovered": True,
         "deleteChangedBundle": True,
+        "vmcpProxyPeerUrl": peer_url,
+        "vmcpProxyInRegistry": True,
     }
     result_path = Path(os.environ.get("VMCP_PHASE5_RESULT", "/tmp/phase5-e2e-result.json"))
     result_path.write_text(json.dumps(out, indent=2) + "\n", encoding="utf-8")

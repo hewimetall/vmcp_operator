@@ -6,7 +6,7 @@ metadata:
   labels:
     vmcp.io/profile: code
 spec:
-  image: registry.example.com/ai/vmcp:0.1.0
+  image: registry.example.com/ai/vmcp:1.2.0
   adminTokenSecretRef:
     name: code-admin-tokens
   masterPasswordSecretRef:

@@ -20,6 +20,10 @@ pub struct DesiredHttpUpstream {
     /// Relative path inside the artifact volume, e.g. `specs/foo-abcd.json`.
     pub sidecar_relpath: Option<String>,
     pub enabled: bool,
+    /// Forward caller identity (`X-Vmcp-Subject` / `X-Vmcp-Groups`) to this
+    /// upstream on `tools/call`. Default `false` — enable only for internal
+    /// adapters (vmcp v1.2+).
+    pub forward_identity: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,6 +72,7 @@ fn to_upstream_spec(desired: &DesiredHttpUpstream) -> CoreResult<UpstreamSpec> {
         cwd: None,
         sidecar_spec,
         enabled: desired.enabled,
+        forward_identity: desired.forward_identity,
     })
 }
 
@@ -132,7 +137,19 @@ mod tests {
             description: Some("docs".into()),
             sidecar_relpath: Some("specs/docs-aaaa.json".into()),
             enabled: true,
+            forward_identity: false,
         }
+    }
+
+    #[test]
+    fn renders_forward_identity_when_enabled() {
+        let mut up = sample("stand_api", "http://stand-api.svc/mcp");
+        up.forward_identity = true;
+        up.bearer_env = None;
+        let rendered = render_registry(vec![up]).unwrap();
+        assert!(rendered.text.contains("\"forward_identity\": true"));
+        let parsed: WireRegistry = serde_json::from_str(&rendered.text).unwrap();
+        assert!(parsed.upstreams[0].forward_identity);
     }
 
     #[test]

@@ -37,6 +37,7 @@ def test_start_dashboard_background_spawns_daemon(
 ) -> None:
     monkeypatch.setenv("VMCP_OPERATOR_DASHBOARD_PASSWORD", "secret")
     monkeypatch.setenv("VMCP_OPERATOR_DASHBOARD_PORT", "18080")
+    monkeypatch.setenv("VMCP_OPERATOR_MCP_CATALOG", "memory")
     from vmcp_operator.__main__ import _start_dashboard_background
 
     with patch("threading.Thread") as thread_cls:
@@ -46,3 +47,15 @@ def test_start_dashboard_background_spawns_daemon(
         assert kwargs["daemon"] is True
         assert kwargs["name"] == "vmcp-dashboard"
         thread_cls.return_value.start.assert_called_once()
+
+
+def test_start_dashboard_background_kr8s_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("VMCP_OPERATOR_DASHBOARD_PASSWORD", "secret")
+    monkeypatch.delenv("VMCP_OPERATOR_MCP_CATALOG", raising=False)
+    from vmcp_operator.__main__ import _start_dashboard_background
+
+    with patch("threading.Thread") as thread_cls:
+        _start_dashboard_background()
+        thread_cls.assert_called_once()

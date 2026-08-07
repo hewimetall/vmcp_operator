@@ -15,6 +15,7 @@ from vmcp_operator.domain.models.mcp import (
     ContainerImageSource,
     McpServerDesired,
     RemoteHttpSource,
+    VmcpProxySource,
 )
 from vmcp_operator.domain.ports import ArtifactRenderer, SkillLoader
 
@@ -61,6 +62,22 @@ def _to_upstream(gateway: GatewayDesired, mcp: McpServerDesired) -> UpstreamDesi
             bearer_env=bearer_env,
             description=mcp.description,
             enabled=True,
+            forward_identity=mcp.forward_identity,
+        )
+    if isinstance(source, VmcpProxySource):
+        if source.peer == gateway.key:
+            msg = f"mcp `{mcp.name}` cannot peer a gateway to itself via VmcpProxy"
+            raise ValueError(msg)
+        bearer_env = None
+        if source.bearer_secret_ref is not None:
+            bearer_env = f"VMCP_BEARER_{mcp.name.upper().replace('-', '_')}"
+        return UpstreamDesired(
+            name=mcp.name,
+            url=source.cluster_url(),
+            bearer_env=bearer_env,
+            description=mcp.description,
+            enabled=True,
+            forward_identity=mcp.forward_identity,
         )
     if isinstance(source, ContainerImageSource):
         port = next(
@@ -79,6 +96,7 @@ def _to_upstream(gateway: GatewayDesired, mcp: McpServerDesired) -> UpstreamDesi
             url=url,
             description=mcp.description,
             enabled=True,
+            forward_identity=mcp.forward_identity,
         )
     msg = f"unsupported source for mcp `{mcp.name}`"
     raise TypeError(msg)

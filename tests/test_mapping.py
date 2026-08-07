@@ -56,3 +56,39 @@ def test_map_skill_refs() -> None:
     gateway = map_gateway("team-a", "resurche", gw_doc["spec"])
     assert gateway.skill_refs[0].name == "research-docs"
     assert gateway.skill_refs[0].key == "skill.yaml"
+
+
+def test_map_authentik_auth_and_forward_identity() -> None:
+    samples = Path(__file__).resolve().parents[1] / "deploy" / "samples"
+    gw_doc = yaml.safe_load((samples / "gateway-authentik.yaml").read_text())
+    gateway = map_gateway(
+        gw_doc["metadata"]["namespace"],
+        gw_doc["metadata"]["name"],
+        gw_doc["spec"],
+    )
+    assert gateway.auth.provider.value == "authentik"
+    assert gateway.auth.admin.mode.value == "authentik"
+    assert gateway.auth.admin.required_groups == ("mcp-admins",)
+    assert gateway.auth.authentik.trusted_proxies == ("10.244.0.0/16",)
+    assert gateway.auth.authentik.forward_auth_secret_ref is not None
+    assert gateway.auth.authentik.forward_auth_secret_ref.name == "main-forward-auth"
+    assert ("mcp-admins", "mcp:admin") in gateway.auth.authentik.group_scopes
+
+    mcp_doc = yaml.safe_load((samples / "mcp-internal.yaml").read_text())
+    mcp = map_mcp(
+        mcp_doc["metadata"]["namespace"],
+        mcp_doc["metadata"]["name"],
+        mcp_doc["spec"],
+    )
+    assert mcp.forward_identity is True
+
+
+def test_map_architect_forward_identity() -> None:
+    doc = yaml.safe_load((ROOT / "code" / "mcp-architect-c4.yaml").read_text())
+    mcp = map_mcp(doc["metadata"]["namespace"], doc["metadata"]["name"], doc["spec"])
+    assert mcp.forward_identity is True
+    from vmcp_operator.adapters.driving.k8s.mapping import mcp_to_crd
+
+    crd = mcp_to_crd(mcp)
+    assert crd["spec"]["forwardIdentity"] is True
+    assert crd["spec"]["source"]["type"] == "ContainerImage"

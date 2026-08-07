@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from enum import StrEnum
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +46,53 @@ class ProxyDesired:
 
 
 @dataclass(frozen=True, slots=True)
+class GqlDesired:
+    max_complexity: int = 1000
+    max_depth: int = 10
+
+
+class AuthProvider(StrEnum):
+    LOCAL = "local"
+    AUTHENTIK = "authentik"
+
+
+class AdminAuthMode(StrEnum):
+    NONE = "none"
+    BASIC = "basic"
+    AUTHENTIK = "authentik"
+
+
+@dataclass(frozen=True, slots=True)
+class AdminAuthDesired:
+    mode: AdminAuthMode = AdminAuthMode.BASIC
+    required_groups: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class AuthentikDesired:
+    issuer: str = ""
+    jwks_url: str = ""
+    audiences: tuple[str, ...] = ()
+    accept_bearer: bool = True
+    forward_auth: bool = True
+    username_header: str = "x-authentik-username"
+    groups_header: str = "x-authentik-groups"
+    groups_claim: str = "groups"
+    group_scopes: tuple[tuple[str, str], ...] = ()
+    trusted_proxies: tuple[str, ...] = ()
+    forward_auth_secret_ref: SecretRef | None = None
+    forward_auth_secret_header: str = "x-vmcp-forward-auth"
+
+
+@dataclass(frozen=True, slots=True)
+class AuthDesired:
+    enabled: bool = True
+    provider: AuthProvider = AuthProvider.LOCAL
+    admin: AdminAuthDesired = field(default_factory=AdminAuthDesired)
+    authentik: AuthentikDesired = field(default_factory=AuthentikDesired)
+
+
+@dataclass(frozen=True, slots=True)
 class SkillRef:
     name: str
     key: str | None = None
@@ -70,5 +118,7 @@ class GatewayDesired:
     persistence: PersistenceDesired = PersistenceDesired()
     tasks: TasksDesired = TasksDesired()
     proxy: ProxyDesired = ProxyDesired()
+    gql: GqlDesired = GqlDesired()
+    auth: AuthDesired = AuthDesired()
     skill_refs: tuple[SkillRef, ...] = ()
     generation: int = 1

@@ -38,6 +38,7 @@ features = ["pyo3/abi3t-py315"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 addopts = "-q"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
@@ -45,6 +46,11 @@ asyncio_default_fixture_loop_scope = "function"
 [tool.coverage.run]
 branch = true
 source = ["vmcp_operator"]
+omit = [
+    # Live Kubernetes clients — exercised in KWOK/e2e, not unit gates.
+    "python/vmcp_operator/adapters/driven/k8s/gateway_catalog.py",
+    "python/vmcp_operator/adapters/driven/k8s/mcp_catalog.py",
+]
 
 [tool.coverage.report]
 fail_under = 98

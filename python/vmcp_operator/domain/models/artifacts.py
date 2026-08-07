@@ -13,6 +13,7 @@ class UpstreamDesired:
     description: str | None = None
     sidecar_relpath: str | None = None
     enabled: bool = True
+    forward_identity: bool = False
 
 
 @dataclass(frozen=True, slots=True)

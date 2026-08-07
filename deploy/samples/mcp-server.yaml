@@ -8,6 +8,8 @@ spec:
   description: Example hosted Streamable HTTP MCP
   gatewayRef:
     name: main
+  # External SaaS — leave forwardIdentity false (default).
+  forwardIdentity: false
   source:
     type: RemoteHttp
     url: https://docs.example.com/mcp
