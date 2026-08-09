@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
 from vmcp_operator.adapters.driven.k8s.ssa import ServerSideApply
+from vmcp_operator.adapters.driving.k8s.ownership import attach_owner
 from vmcp_operator.domain.models.artifacts import SkillDesired
 from vmcp_operator.domain.models.gateway import GatewayDesired
 from vmcp_operator.domain.models.mcp import McpServerDesired
@@ -27,6 +29,8 @@ class GatewayReconcile:
         gateway: GatewayDesired,
         mcps: list[McpServerDesired],
         skills: list[SkillDesired] | None = None,
+        *,
+        owner: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         del skills
         bundle = await self.artifacts.execute(gateway, mcps)
@@ -35,12 +39,19 @@ class GatewayReconcile:
             gateway, bundle, mcps, forward_auth_header_value=hop_value
         )
         for obj in objects:
+            if owner is not None:
+                attach_owner(obj, owner)
             await self.apply.apply(obj)
+        for attachment in gateway.attachments:
+            body = _materialize_attachment(attachment, gateway)
+            if owner is not None:
+                attach_owner(body, owner)
+            await self.apply.apply(body)
         return {
             "phase": "Applied",
             "gateway": gateway.key.as_str(),
             "bundleSha256": bundle.bundle_sha256,
-            "objects": len(objects),
+            "objects": len(objects) + len(gateway.attachments),
             "adminHopHeaderInjected": bool(hop_value)
             and _wants_admin_hop_inject(gateway),
         }
@@ -67,6 +78,23 @@ def _wants_admin_hop_inject(gateway: GatewayDesired) -> bool:
     return want
 
 
+def _materialize_attachment(
+    attachment: Mapping[str, Any], gateway: GatewayDesired
+) -> dict[str, Any]:
+    """Copy an opaque attachment and force namespace + gateway label."""
+    import copy
+
+    body = copy.deepcopy(dict(attachment))
+    meta = body.setdefault("metadata", {})
+    meta["namespace"] = gateway.key.namespace
+    labels = dict(meta.get("labels") or {})
+    labels.setdefault("vmcp.io/gateway", gateway.key.name)
+    meta["labels"] = labels
+    if not body.get("apiVersion") or not body.get("kind") or not meta.get("name"):
+        raise ValueError("attachment requires apiVersion, kind, and metadata.name")
+    return body
+
+
 @dataclass(frozen=True, slots=True)
 class McpReconcile:
     manifests: RenderMcpManifests
@@ -76,9 +104,13 @@ class McpReconcile:
         self,
         gateway: GatewayDesired,
         mcp: McpServerDesired,
+        *,
+        owner: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         objects = self.manifests.execute(gateway, mcp)
         for obj in objects:
+            if owner is not None:
+                attach_owner(obj, owner)
             await self.apply.apply(obj)
         return {
             "phase": "Applied" if objects else "Registered",

@@ -3,15 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import StrEnum
 
 from vmcp_operator.domain.models.gateway import GatewayKey, GatewayParentRef, SecretRef, SkillRef
-
-
-class SourceType(StrEnum):
-    CONTAINER_IMAGE = "ContainerImage"
-    REMOTE_HTTP = "RemoteHttp"
-    VMCP_PROXY = "VmcpProxy"
 
 
 @dataclass(frozen=True, slots=True)

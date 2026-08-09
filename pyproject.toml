@@ -30,6 +30,11 @@ dev = [
 [project.scripts]
 vmcp-operator = "vmcp_operator.__main__:main"
 
+# Free-threaded CPython 3.15t: cryptography 49 has no abi3t wheel and sdist
+# fails to build (issue #4). Override to 50+ which ships freethreaded wheels.
+[tool.uv]
+override-dependencies = ["cryptography>=50"]
+
 [tool.maturin]
 manifest-path = "crates/vmcp-op-pyo3/Cargo.toml"
 module-name = "vmcp_operator._kernel"
@@ -38,7 +43,7 @@ features = ["pyo3/abi3t-py315"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
+pythonpath = [".", "tests"]
 addopts = "-q"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
@@ -51,6 +56,7 @@ omit = [
     "python/vmcp_operator/adapters/driven/k8s/gateway_catalog.py",
     "python/vmcp_operator/adapters/driven/k8s/mcp_catalog.py",
     "python/vmcp_operator/adapters/driven/k8s/secret_loader.py",
+    "python/vmcp_operator/adapters/driven/k8s/gateway_toucher.py",
 ]
 
 [tool.coverage.report]

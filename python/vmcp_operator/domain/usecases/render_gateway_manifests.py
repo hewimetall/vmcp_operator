@@ -10,6 +10,7 @@ from vmcp_operator.domain.models.gateway import (
     PUBLIC_STRIP_IDENTITY_HEADERS,
     GatewayDesired,
     GatewayParentRef,
+    RouteDesired,
 )
 from vmcp_operator.domain.models.mcp import (
     McpServerDesired,
@@ -93,6 +94,7 @@ class RenderGatewayManifests:
         }
 
         env = _gateway_env(gateway, mcps or [])
+        tokens_writable = gateway.admin_token_secret_ref.writable
         volumes = [
             {
                 "name": "artifacts-raw",
@@ -116,15 +118,46 @@ class RenderGatewayManifests:
                 },
             },
         ]
-        volume_mounts = [
+        volume_mounts: list[dict[str, Any]] = [
             {"name": "artifacts", "mountPath": "/config"},
             {"name": "state", "mountPath": "/state"},
-            {
-                "name": "admin-tokens",
-                "mountPath": "/secrets",
-                "readOnly": True,
-            },
         ]
+        if not tokens_writable:
+            volume_mounts.append(
+                {
+                    "name": "admin-tokens",
+                    "mountPath": "/secrets",
+                    "readOnly": True,
+                }
+            )
+
+        expand_script = (
+            "set -eu; "
+            "mkdir -p /config; "
+            "for f in /config-raw/*; do "
+            "  base=$(basename \"$f\"); "
+            "  rel=$(printf '%s' \"$base\" | sed 's#__#/#g'); "
+            "  mkdir -p \"/config/$(dirname \"$rel\")\"; "
+            "  cp \"$f\" \"/config/$rel\"; "
+            "done"
+        )
+        init_volume_mounts = [
+            {"name": "artifacts-raw", "mountPath": "/config-raw"},
+            {"name": "artifacts", "mountPath": "/config"},
+        ]
+        if tokens_writable:
+            # Seed once: preserve Token CRUD writes across restarts.
+            expand_script += (
+                "; if [ ! -f /state/tokens.json ]; then "
+                "cp /secrets-bootstrap/tokens.json /state/tokens.json; "
+                "fi"
+            )
+            init_volume_mounts.extend(
+                [
+                    {"name": "admin-tokens", "mountPath": "/secrets-bootstrap", "readOnly": True},
+                    {"name": "state", "mountPath": "/state"},
+                ]
+            )
 
         deployment = {
             "apiVersion": "apps/v1",
@@ -149,20 +182,8 @@ class RenderGatewayManifests:
                                 "name": "expand-artifacts",
                                 "image": gateway.image,
                                 "command": ["sh", "-c"],
-                                "args": [
-                                    "set -eu; "
-                                    "mkdir -p /config; "
-                                    "for f in /config-raw/*; do "
-                                    "  base=$(basename \"$f\"); "
-                                    "  rel=$(printf '%s' \"$base\" | sed 's#__#/#g'); "
-                                    "  mkdir -p \"/config/$(dirname \"$rel\")\"; "
-                                    "  cp \"$f\" \"/config/$rel\"; "
-                                    "done"
-                                ],
-                                "volumeMounts": [
-                                    {"name": "artifacts-raw", "mountPath": "/config-raw"},
-                                    {"name": "artifacts", "mountPath": "/config"},
-                                ],
+                                "args": [expand_script],
+                                "volumeMounts": init_volume_mounts,
                             }
                         ],
                         "containers": [
@@ -180,38 +201,48 @@ class RenderGatewayManifests:
             },
         }
 
-        public_rule: dict[str, Any] = {
-            "matches": [{"path": {"type": "PathPrefix", "value": "/"}}],
-            "backendRefs": [{"name": name, "port": 8080}],
-        }
-        public_filters = _public_strip_filters(gateway)
-        if public_filters:
-            public_rule["filters"] = public_filters
-
-        public_route = {
-            "apiVersion": "gateway.networking.k8s.io/v1",
-            "kind": "HTTPRoute",
-            "metadata": {
-                "name": f"{name}-public",
-                "namespace": ns,
-                "labels": labels,
-            },
-            "spec": {
-                "parentRefs": [_parent_ref(gateway.public_route.gateway_ref)],
-                "hostnames": [gateway.public_route.hostname],
-                "rules": [public_rule],
-            },
-        }
-        if gateway.public_route.annotations:
-            public_route["metadata"]["annotations"] = dict(gateway.public_route.annotations)
-
-        manifests = [pvc, configmap, service, deployment, public_route]
-        if gateway.admin_route is not None:
+        manifests: list[dict[str, Any]] = [pvc, configmap, service, deployment]
+        if gateway.public_route.manage:
+            public_rule: dict[str, Any] = {
+                "matches": [{"path": {"type": "PathPrefix", "value": "/"}}],
+                "backendRefs": [{"name": name, "port": 8080}],
+            }
+            public_filters = _route_filters(
+                gateway,
+                route=gateway.public_route,
+                forward_auth_header_value=None,
+                inject=False,
+            )
+            if public_filters:
+                public_rule["filters"] = public_filters
+            public_route = {
+                "apiVersion": "gateway.networking.k8s.io/v1",
+                "kind": "HTTPRoute",
+                "metadata": {
+                    "name": f"{name}-public",
+                    "namespace": ns,
+                    "labels": labels,
+                },
+                "spec": {
+                    "parentRefs": [_parent_ref(gateway.public_route.gateway_ref)],
+                    "hostnames": [gateway.public_route.hostname],
+                    "rules": [public_rule],
+                },
+            }
+            if gateway.public_route.annotations:
+                public_route["metadata"]["annotations"] = dict(gateway.public_route.annotations)
+            manifests.append(public_route)
+        if gateway.admin_route is not None and gateway.admin_route.manage:
             admin_rule: dict[str, Any] = {
                 "matches": [{"path": {"type": "PathPrefix", "value": "/admin"}}],
                 "backendRefs": [{"name": name, "port": 8080}],
             }
-            admin_filters = _admin_hop_filters(gateway, forward_auth_header_value)
+            admin_filters = _route_filters(
+                gateway,
+                route=gateway.admin_route,
+                forward_auth_header_value=forward_auth_header_value,
+                inject=True,
+            )
             if admin_filters:
                 admin_rule["filters"] = admin_filters
             admin_obj: dict[str, Any] = {
@@ -234,17 +265,13 @@ class RenderGatewayManifests:
         return manifests
 
 
-def _public_strip_filters(gateway: GatewayDesired) -> list[dict[str, Any]]:
-    if not gateway.public_route.strip_client_identity_headers:
-        return []
+def _identity_remove_headers(gateway: GatewayDesired) -> list[str]:
     headers = list(PUBLIC_STRIP_IDENTITY_HEADERS)
     ak = gateway.auth.authentik
     for custom in (ak.username_header, ak.groups_header, ak.forward_auth_secret_header):
-        # Preserve casing from the canonical list when possible; still strip customs.
         canon = next((h for h in headers if h.lower() == custom.lower()), None)
         if canon is None:
             headers.append(custom)
-    # Deduplicate case-insensitively while keeping first spelling.
     seen: set[str] = set()
     remove: list[str] = []
     for header in headers:
@@ -253,39 +280,42 @@ def _public_strip_filters(gateway: GatewayDesired) -> list[dict[str, Any]]:
             continue
         seen.add(key)
         remove.append(header)
-    return [
-        {
-            "type": "RequestHeaderModifier",
-            "requestHeaderModifier": {"remove": remove},
-        }
-    ]
+    return remove
 
 
-def _admin_hop_filters(
-    gateway: GatewayDesired, forward_auth_header_value: str | None
+def _route_filters(
+    gateway: GatewayDesired,
+    *,
+    route: RouteDesired,
+    forward_auth_header_value: str | None,
+    inject: bool,
 ) -> list[dict[str, Any]]:
-    route = gateway.admin_route
-    if route is None:
-        return []
-    want = route.inject_forward_auth_header
-    secret_ref = gateway.auth.authentik.forward_auth_secret_ref
-    if want is None:
-        want = secret_ref is not None
-    if not want:
-        return []
-    if not forward_auth_header_value:
-        # Reconcile could not materialize the secret; omit set rather than mint empty hop.
-        return []
-    header = gateway.auth.authentik.forward_auth_secret_header or "x-vmcp-forward-auth"
-    # Gateway API header names are typically canonicalized; use the configured spelling.
-    return [
-        {
-            "type": "RequestHeaderModifier",
-            "requestHeaderModifier": {
-                "set": [{"name": header, "value": forward_auth_header_value}],
-            },
-        }
-    ]
+    filters: list[dict[str, Any]] = []
+    if route.strip_client_identity_headers:
+        filters.append(
+            {
+                "type": "RequestHeaderModifier",
+                "requestHeaderModifier": {"remove": _identity_remove_headers(gateway)},
+            }
+        )
+    if inject:
+        want = route.inject_forward_auth_header
+        secret_ref = gateway.auth.authentik.forward_auth_secret_ref
+        if want is None:
+            want = secret_ref is not None
+        if want and forward_auth_header_value:
+            header = gateway.auth.authentik.forward_auth_secret_header or "x-vmcp-forward-auth"
+            filters.append(
+                {
+                    "type": "RequestHeaderModifier",
+                    "requestHeaderModifier": {
+                        "set": [{"name": header, "value": forward_auth_header_value}],
+                    },
+                }
+            )
+    for extra in route.extra_filters:
+        filters.append(dict(extra))
+    return filters
 
 
 def _gateway_env(

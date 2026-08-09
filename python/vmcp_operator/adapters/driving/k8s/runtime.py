@@ -7,6 +7,11 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from vmcp_operator.adapters.driven.k8s.gateway_toucher import (
+    GatewayToucher,
+    Kr8sGatewayToucher,
+    RecordingGatewayToucher,
+)
 from vmcp_operator.adapters.driven.k8s.ssa import InMemoryApplier, ServerSideApply
 from vmcp_operator.adapters.driven.registry.engine import RegistryEngine
 from vmcp_operator.adapters.driving.k8s.reconcile import GatewayReconcile, McpReconcile
@@ -41,10 +46,16 @@ class OperatorRuntime:
     list_mcps: ListMcps
     get_gateway: GetGateway
     unregister_upstream: UnregisterFn | None = None
+    gateway_toucher: GatewayToucher | None = None
     pending: set[str] = field(default_factory=set)
 
     def enqueue(self, key: GatewayKey) -> None:
         self.pending.add(key.as_str())
+
+    async def touch_gateway(self, key: GatewayKey) -> None:
+        self.enqueue(key)
+        if self.gateway_toucher is not None:
+            await self.gateway_toucher.touch(key)
 
     @classmethod
     def in_memory(
@@ -54,6 +65,7 @@ class OperatorRuntime:
         mcps: dict[str, list[McpServerDesired]] | None = None,
         skill_loader: Any | None = None,
         secrets: Any | None = None,
+        gateway_toucher: GatewayToucher | None = None,
     ) -> OperatorRuntime:
         store_g = gateways or {}
         store_m = mcps or {}
@@ -73,6 +85,7 @@ class OperatorRuntime:
             manifests=RenderMcpManifests(),
             apply=apply,
         )
+        toucher = gateway_toucher or RecordingGatewayToucher()
 
         async def _list(key: GatewayKey) -> list[McpServerDesired]:
             return list(store_m.get(key.as_str(), []))
@@ -85,8 +98,10 @@ class OperatorRuntime:
             mcp_reconcile=mcp_reconcile,
             list_mcps=_list,
             get_gateway=_get,
+            gateway_toucher=toucher,
         )
         runtime.applier = applier  # type: ignore[attr-defined]
+        runtime.toucher = toucher  # type: ignore[attr-defined]
         return runtime
 
     @classmethod
@@ -127,6 +142,7 @@ class OperatorRuntime:
             ),
             list_mcps=_list,
             get_gateway=_get,
+            gateway_toucher=Kr8sGatewayToucher(),
         )
 
 
@@ -137,12 +153,10 @@ def get_runtime() -> OperatorRuntime:
     global _RUNTIME
     if _RUNTIME is None:
         mode = os.environ.get("VMCP_OPERATOR_RUNTIME", "").lower()
-        if mode in {"memory", "inmemory", "stub"}:
-            _RUNTIME = OperatorRuntime.in_memory()
-        elif mode in {"kr8s", "cluster"} or bool(os.environ.get("KUBECONFIG")):
+        if mode in {"kr8s", "cluster"} or bool(os.environ.get("KUBECONFIG")):
             _RUNTIME = OperatorRuntime.for_cluster()
         else:
-            # Unit tests / local without kubeconfig stay in-memory.
+            # memory / stub / default local (no kubeconfig)
             _RUNTIME = OperatorRuntime.in_memory()
     return _RUNTIME
 

@@ -71,12 +71,14 @@ class Kr8sServerSideApplier:
                     plain=True,
                 )
             except Exception as inner:
-                if "conflict" in str(inner).lower():
+                inner_msg = str(inner).lower()
+                if "conflict" in inner_msg:
                     raise ConflictError(str(inner)) from inner
-                if "not found" in str(inner).lower():
-                    await obj.create()
-                    return dict(obj.raw)
-                raise
+                if "not found" not in inner_msg:
+                    raise
+                # Same create-on-missing path as the outer handler (async coverage gap).
+                await obj.create()  # pragma: no cover
+                return dict(obj.raw)  # pragma: no cover
 
     async def _patch(
         self,

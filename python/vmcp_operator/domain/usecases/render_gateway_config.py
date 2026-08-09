@@ -9,6 +9,12 @@ from vmcp_operator.domain.models.gateway import (
 )
 
 
+def _tokens_file_path(gateway: GatewayDesired) -> str:
+    if gateway.admin_token_secret_ref.writable:
+        return "/state/tokens.json"
+    return "/secrets/tokens.json"
+
+
 def render_gateway_config(gateway: GatewayDesired) -> str:
     """Produce a deterministic vmcp.toml matching vmcp ≥1.2 Settings shape."""
     public_base = (gateway.public_base_url or f"https://{gateway.public_route.hostname}").rstrip(
@@ -41,8 +47,8 @@ def render_gateway_config(gateway: GatewayDesired) -> str:
         "[auth]",
         f"enabled = {_toml_bool(gateway.auth.enabled)}",
         f'provider = "{gateway.auth.provider.value}"',
-        # Secrets are injected via env (master password) / mounted file (tokens).
-        'tokens_file = "/secrets/tokens.json"',
+        # Secrets: master password via env; tokens via Secret mount or writable PVC seed.
+        f'tokens_file = "{_toml_str(_tokens_file_path(gateway))}"',
         'clients_db_path = "/state/clients.db"',
         'jwks_private_key_pem_path = "/state/jwks.pem"',
         "",

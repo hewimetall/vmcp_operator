@@ -46,6 +46,15 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
+GHCR packages for this repo are **not anonymously pullable** — `crane ls` /
+`docker pull` without credentials returns `DENIED` (not “not found”). Authenticate
+first:
+
+```bash
+echo "$GHCR_TOKEN" | docker login ghcr.io -u USERNAME --password-stdin
+# cluster: imagePullSecrets for ghcr.io/hewimetall/vmcp_operator
+```
+
 Local build:
 
 ```bash
@@ -53,6 +62,9 @@ docker build --target runtime -t ghcr.io/hewimetall/vmcp_operator:local .
 ```
 
 Chart default image: `ghcr.io/hewimetall/vmcp_operator`.
+
+`uv.lock` pins `cryptography>=50` (via `[tool.uv] override-dependencies`) so
+free-threaded CPython 3.15t image builds do not need `UV_OVERRIDE`.
 
 Phase −1 compatibility results: [docs/phase-minus-one.md](docs/phase-minus-one.md).
 
@@ -62,3 +74,7 @@ Gateway contract (vmcp **≥1.2** AuthFacade / hop trust / `forward_identity`):
 Operator control plane **above** vmcp (MCP add/remove/update + NL CRUD,
 peer Gateways via `VmcpProxy` / vmcp-proxy):
 [docs/control-plane.md](docs/control-plane.md).
+
+C4 delta for issue #4 (status / finalizers / ownership) — import into
+architect-c4 workspace [`ws-vmcp-operator`](https://architecture.runmcp.ru/view/ws-vmcp-operator):
+[docs/architecture-issue4.md](docs/architecture-issue4.md).
