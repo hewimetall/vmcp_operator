@@ -17,6 +17,9 @@ Tracker: https://github.com/hewimetall/vmcp_operator/issues/4
 | BYO HTTPRoute (`manage: false`) + `extraFilters` + `attachments` | This change |
 | `cryptography>=50` for free-threaded image builds | This change |
 | README: GHCR requires authenticated pull | This change |
+| Dead code cleanup (agent-lsp + rg) | Follow-up on PR #7 |
+| Per-file coverage ≥98% (median 100%) | Follow-up on PR #7 |
+| Architect delta for status/ownership | `docs/architecture-issue4.md` → `ws-vmcp-operator` |
 
 ## Status / finalizers / ownership
 
