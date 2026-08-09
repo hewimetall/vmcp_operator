@@ -16,16 +16,20 @@
 | Admin auth `none` \| `basic` \| `authentik` | `spec.auth.admin` |
 | Hop trust (`trusted_proxies` / hop secret) | `spec.auth.authentik.trustedProxies` + `forwardAuthSecretRef` |
 | Public edge strip of client Authentik/hop headers | `publicRoute.stripClientIdentityHeaders` (default true) → HTTPRoute `RequestHeaderModifier.remove` |
-| Admin edge hop header inject | `adminRoute.injectForwardAuthHeader` (default when SecretRef set) → HTTPRoute `RequestHeaderModifier.set` from Secret |
+| Admin edge strip + hop header inject | admin route strips the same identity headers; `injectForwardAuthHeader` (default when SecretRef set) → `RequestHeaderModifier.set` |
 | `enableServiceLinks: false` on Gateway pods | always (avoids `VMCP_PORT=tcp://…` when Gateway is named `vmcp`) |
 | `public_base_url` override | `spec.publicBaseUrl` (else `https://{publicRoute.hostname}`) |
+| BYO HTTPRoute | `publicRoute.manage` / `adminRoute.manage: false`; optional `extraFilters` |
+| Opaque attachments (e.g. TrafficPolicy) | `spec.attachments[]` SSA-applied with ownerReferences |
 | Proxy / tasks / gql | `spec.proxy` / `spec.tasks` / `spec.gql` → toml |
 | Admin tokens + master password | Secret mounts / `VMCP_AUTH__MASTER_PASSWORD_ARGON2` |
+| Writable admin tokens (Token CRUD) | `adminTokenSecretRef.writable: true` → `/state/tokens.json` (seed once) |
 | Upstream bearer `${ENV}` | `source.bearerSecretRef` → pod env |
+| CR status / GC | top-level `status.phase` (+ `artifactSha256`); finalizers; child `ownerReferences` |
 
 ## Secrets
 
-1. **`adminTokenSecretRef`** — Secret key (default `token`) with `tokens.json` body; mounted at `/secrets/tokens.json`.
+1. **`adminTokenSecretRef`** — Secret key (default `token`) with `tokens.json` body; mounted read-only at `/secrets/tokens.json`, or seeded to `/state/tokens.json` when `writable: true`.
 2. **`masterPasswordSecretRef`** — argon2id hash (`vmcp hash-password`), injected as `VMCP_AUTH__MASTER_PASSWORD_ARGON2`.
 3. **`auth.authentik.forwardAuthSecretRef`** (optional) — hop secret → `VMCP_AUTH__AUTHENTIK__FORWARD_AUTH_SECRET`.
 

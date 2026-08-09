@@ -38,6 +38,7 @@ ENV UV_PYTHON_INSTALL_DIR=/opt/python \
 WORKDIR /src
 COPY . .
 
+# cryptography>=50 is locked ([tool.uv] override-dependencies) for 3.15t wheels.
 RUN uv python install 3.15t \
  && uv venv --python 3.15t /opt/venv \
  && uv sync --frozen --no-dev --no-install-project \
