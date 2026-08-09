@@ -246,12 +246,9 @@ async def reconcile_mcp(
             return
         mcp_result = await runtime.mcp_reconcile.execute(gateway, mcp, owner=owner)
         mcps = await runtime.list_mcps(mcp.gateway_key)
-        # Keep gateway aggregate registry in sync when MCP changes.
-        await runtime.gateway_reconcile.execute(
-            gateway,
-            mcps,
-            owner=_gateway_owner_stub(gateway.key),
-        )
+        # Secondary gateway apply from MCP path has no Gateway uid here; skip
+        # ownerRefs — primary Gateway reconcile (woken via touch) re-asserts them.
+        await runtime.gateway_reconcile.execute(gateway, mcps, owner=None)
         if decision.add:
             schedule_finalizer_adds(patch, decision.add)
         await runtime.touch_gateway(mcp.gateway_key)
@@ -265,16 +262,6 @@ async def reconcile_mcp(
             ),
             ready=True,
         )
-
-
-def _gateway_owner_stub(key: GatewayKey) -> dict[str, Any] | None:
-    """Owner for nested gateway re-apply from MCP path.
-
-    Without the live Gateway uid we skip owner attachment on this secondary apply;
-    the primary Gateway reconcile (woken via touch) re-asserts ownerReferences.
-    """
-    del key
-    return None
 
 
 @kopf.on.event("apps", "v1", "deployments", labels={GATEWAY_LABEL: kopf.PRESENT})

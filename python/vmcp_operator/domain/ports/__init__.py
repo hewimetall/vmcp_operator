@@ -19,10 +19,6 @@ class GatewayRepository(Protocol):
     async def list_all(self) -> list[GatewayDesired]: ...
 
 
-class McpServerRepository(Protocol):
-    async def list_for_gateway(self, key: GatewayKey) -> list[McpServerDesired]: ...
-
-
 class McpCatalog(Protocol):
     """Operator-owned VmcpMcpServer CR catalog (SoT for fleet MCP CRUD)."""
 
@@ -51,17 +47,3 @@ class ArtifactRenderer(Protocol):
 
 class TokenIssuer(Protocol):
     async def issue_use_token(self, key: GatewayKey, client_name: str) -> str: ...
-
-
-class EnvironmentSummary(Protocol):
-    @property
-    def key(self) -> GatewayKey: ...
-
-    @property
-    def phase(self) -> str: ...
-
-    @property
-    def public_hostname(self) -> str: ...
-
-    @property
-    def admin_url(self) -> str | None: ...
