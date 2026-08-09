@@ -153,12 +153,10 @@ def get_runtime() -> OperatorRuntime:
     global _RUNTIME
     if _RUNTIME is None:
         mode = os.environ.get("VMCP_OPERATOR_RUNTIME", "").lower()
-        if mode in {"memory", "inmemory", "stub"}:
-            _RUNTIME = OperatorRuntime.in_memory()
-        elif mode in {"kr8s", "cluster"} or bool(os.environ.get("KUBECONFIG")):
+        if mode in {"kr8s", "cluster"} or bool(os.environ.get("KUBECONFIG")):
             _RUNTIME = OperatorRuntime.for_cluster()
         else:
-            # Unit tests / local without kubeconfig stay in-memory.
+            # memory / stub / default local (no kubeconfig)
             _RUNTIME = OperatorRuntime.in_memory()
     return _RUNTIME
 

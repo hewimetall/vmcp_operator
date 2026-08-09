@@ -172,6 +172,52 @@ async def test_immutable_gateway_storage_class_rejected(runtime: OperatorRuntime
 
 
 @pytest.mark.asyncio
+async def test_reconcile_gateway_skips_finalizer_add_when_present(
+    runtime: OperatorRuntime,
+) -> None:
+    patch = FakePatch()
+    await handlers.reconcile_gateway(
+        namespace="team-a",
+        name="main",
+        spec=_gateway_spec(),
+        meta=_meta(finalizers=["vmcp.io/gateway-protection"]),
+        patch=patch,
+        body={
+            "apiVersion": "vmcp.io/v1alpha1",
+            "kind": "VmcpGateway",
+            "metadata": _meta(finalizers=["vmcp.io/gateway-protection"]),
+        },
+    )
+    assert patch.status["phase"] == "Applied"
+    assert patch.fns == []
+
+
+@pytest.mark.asyncio
+async def test_reconcile_mcp_skips_finalizer_add_when_present(
+    runtime: OperatorRuntime,
+) -> None:
+    patch = FakePatch()
+    await handlers.reconcile_mcp(
+        namespace="team-a",
+        name="docs",
+        spec=_mcp_spec(),
+        meta={"uid": "mcp-uid-1", "generation": 2, "finalizers": ["vmcp.io/unregister-before-gc"]},
+        patch=patch,
+        body={
+            "apiVersion": "vmcp.io/v1alpha1",
+            "kind": "VmcpMcpServer",
+            "metadata": {
+                "uid": "mcp-uid-1",
+                "generation": 2,
+                "finalizers": ["vmcp.io/unregister-before-gc"],
+            },
+        },
+    )
+    assert patch.status["phase"] in {"Applied", "Registered"}
+    assert patch.fns == []
+
+
+@pytest.mark.asyncio
 async def test_reconcile_gateway_without_uid_skips_owner(runtime: OperatorRuntime) -> None:
     patch = FakePatch()
     await handlers.reconcile_gateway(

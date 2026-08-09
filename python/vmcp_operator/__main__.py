@@ -57,6 +57,21 @@ def main() -> None:
     kopf.run(clusterwide=False)
 
 
+class _DeniedIssuer:
+    async def issue_use_token(self, key: Any, client_name: str) -> str:
+        del key, client_name
+        raise LookupError("dashboard token issuer not configured")
+
+
+class _EmptyGateways:
+    async def get(self, key: Any) -> None:
+        del key
+        return None
+
+    async def list_all(self) -> list[Any]:
+        return []
+
+
 def _start_dashboard_background() -> None:
     """Optionally serve the fleet dashboard beside Kopf."""
     from vmcp_operator.adapters.driven.k8s.gateway_catalog import Kr8sGatewayRepository
@@ -69,23 +84,12 @@ def _start_dashboard_background() -> None:
     from vmcp_operator.domain.usecases.issue_use_token import IssueUseToken
     from vmcp_operator.domain.usecases.list_environments import ListEnvironments
 
-    class _DeniedIssuer:
-        async def issue_use_token(self, key: Any, client_name: str) -> str:
-            raise LookupError("dashboard token issuer not configured")
-
     auth = DashboardAuth(
         username=os.environ.get("VMCP_OPERATOR_DASHBOARD_USER", "admin"),
         password=os.environ.get("VMCP_OPERATOR_DASHBOARD_PASSWORD", ""),
     )
     if not auth.password:
         raise SystemExit("VMCP_OPERATOR_DASHBOARD_PASSWORD is required when dashboard enabled")
-
-    class _EmptyGateways:
-        async def get(self, key: Any) -> None:
-            return None
-
-        async def list_all(self) -> list[Any]:
-            return []
 
     catalog_mode = os.environ.get("VMCP_OPERATOR_MCP_CATALOG", "kr8s").lower()
     if catalog_mode in {"memory", "inmemory", "stub"}:

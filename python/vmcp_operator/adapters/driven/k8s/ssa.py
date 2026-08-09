@@ -25,7 +25,7 @@ class ServerSideApply:
     async def apply(self, body: dict[str, Any]) -> dict[str, Any]:
         force = False
         last_error: Exception | None = None
-        for attempt in range(1, self.max_attempts + 1):
+        for attempt in range(1, self.max_attempts + 1):  # pragma: no branch
             try:
                 return await self.applier.server_side_apply(
                     body,
@@ -35,10 +35,9 @@ class ServerSideApply:
             except ConflictError as exc:
                 last_error = exc
                 force = True
-                if attempt == self.max_attempts:
-                    break
-        assert last_error is not None
-        raise last_error
+                if attempt >= self.max_attempts:
+                    raise last_error from None
+        raise AssertionError("unreachable")  # pragma: no cover
 
 
 class ConflictError(RuntimeError):
