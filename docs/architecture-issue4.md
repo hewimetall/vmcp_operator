@@ -1,9 +1,17 @@
 # Architecture delta — issue #4 (status / GC / edge)
 
 Target architect-c4 workspace: [`ws-vmcp-operator`](https://architecture.runmcp.ru/view/ws-vmcp-operator)
-(project `vmcp-operator`). Live MCP `checkout_workspace` is currently broken in this
-agent proxy (`takes 3 positional arguments but 4 were given`), so the delta below
-is the import checklist for a human/session that can bind branch+kanban.
+(project `vmcp-operator`).
+
+**Blocked in this Cloud Agent MCP proxy (2026-08-09):** every mutating tool
+(`checkout_workspace`, `upsert_element`, `upsert_adr`, `upsert_board`) requires a
+session with `branch_bound` + `kanban_bound`. `checkout_workspace` fails with
+`takes 3 positional arguments but 4 were given`, so bind never completes and
+live model writes cannot land from this agent. `validate_model(ws-vmcp-operator)`
+still works (read path) and reports only pre-existing disconnected-element warnings.
+
+The delta below is the **import checklist** for a local Cursor/desktop session
+with a working architect-c4 checkout.
 
 ## New code atoms (under `driving_k8s` / `driven_k8s`)
 

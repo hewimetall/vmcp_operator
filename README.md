@@ -74,3 +74,7 @@ Gateway contract (vmcp **≥1.2** AuthFacade / hop trust / `forward_identity`):
 Operator control plane **above** vmcp (MCP add/remove/update + NL CRUD,
 peer Gateways via `VmcpProxy` / vmcp-proxy):
 [docs/control-plane.md](docs/control-plane.md).
+
+C4 delta for issue #4 (status / finalizers / ownership) — import into
+architect-c4 workspace [`ws-vmcp-operator`](https://architecture.runmcp.ru/view/ws-vmcp-operator):
+[docs/architecture-issue4.md](docs/architecture-issue4.md).
