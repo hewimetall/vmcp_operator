@@ -36,7 +36,10 @@ def schedule_finalizer_removes(patch: Any, names: Iterable[str]) -> None:
         fns.append(drop_finalizer(name))
 
 
-def apply_fns_to_body(fns: Iterable[Callable[[dict[str, Any]], None]], body: dict[str, Any]) -> None:
+def apply_fns_to_body(
+    fns: Iterable[Callable[[dict[str, Any]], None]],
+    body: dict[str, Any],
+) -> None:
     """Test helper: run scheduled transforms against a mutable body copy."""
     for fn in fns:
         fn(body)

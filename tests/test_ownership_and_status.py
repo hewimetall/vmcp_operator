@@ -152,7 +152,11 @@ async def test_recording_toucher_and_gateway_attachments() -> None:
     kinds = [item["body"]["kind"] for item in applier.applied]
     assert "HTTPRoute" not in kinds
     assert "TrafficPolicy" in kinds
-    policy = next(item["body"] for item in applier.applied if item["body"]["kind"] == "TrafficPolicy")
+    policy = next(
+        item["body"]
+        for item in applier.applied
+        if item["body"]["kind"] == "TrafficPolicy"
+    )
     assert policy["metadata"]["ownerReferences"][0]["uid"] == "gw"
     assert policy["metadata"]["labels"]["vmcp.io/gateway"] == "main"
 

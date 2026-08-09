@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any
 
 from vmcp_operator.adapters.driven.k8s.ssa import ServerSideApply
 from vmcp_operator.adapters.driving.k8s.ownership import attach_owner
