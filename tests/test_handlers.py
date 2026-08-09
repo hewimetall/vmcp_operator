@@ -4,7 +4,9 @@ from types import SimpleNamespace
 
 import pytest
 
+from fake_patch import FakePatch
 from vmcp_operator.adapters.driving.k8s import handlers
+from vmcp_operator.adapters.driving.k8s.finalizer_patch import apply_fns_to_body
 from vmcp_operator.adapters.driving.k8s.runtime import OperatorRuntime, set_runtime
 from vmcp_operator.domain.models.artifacts import SkillDesired
 from vmcp_operator.domain.models.gateway import (
@@ -54,6 +56,12 @@ def _mcp_spec() -> dict:
     }
 
 
+def _meta(**extra: object) -> dict:
+    base = {"uid": "gw-uid-1", "generation": 3}
+    base.update(extra)
+    return base
+
+
 @pytest.fixture
 def runtime():
     gw = _gateway()
@@ -88,47 +96,70 @@ async def test_configure_startup_settings() -> None:
 
 @pytest.mark.asyncio
 async def test_reconcile_gateway_applies_bundle(runtime: OperatorRuntime) -> None:
+    patch = FakePatch()
     result = await handlers.reconcile_gateway(
         namespace="team-a",
         name="main",
         spec=_gateway_spec(),
-        meta={},
+        meta=_meta(),
+        patch=patch,
+        body={
+            "apiVersion": "vmcp.io/v1alpha1",
+            "kind": "VmcpGateway",
+            "metadata": _meta(),
+        },
     )
-    assert result["phase"] == "Applied"
-    assert result["gateway"] == "team-a/main"
-    assert "bundleSha256" in result
-    assert result["objects"] == 5
-    assert GATEWAY_FINALIZER_ADDED(result)
-
-
-def GATEWAY_FINALIZER_ADDED(result: dict) -> bool:
-    return "vmcp.io/gateway-protection" in result.get("addFinalizers", [])
+    assert result is None
+    assert patch.status["phase"] == "Applied"
+    assert patch.status["observedGeneration"] == 3
+    assert patch.status["artifactSha256"]
+    body: dict = {"metadata": {"finalizers": []}}
+    apply_fns_to_body(patch.fns, body)
+    assert "vmcp.io/gateway-protection" in body["metadata"]["finalizers"]
+    applied = runtime.applier.applied  # type: ignore[attr-defined]
+    assert applied
+    for item in applied:
+        refs = item["body"]["metadata"].get("ownerReferences") or []
+        assert refs
+        assert refs[0]["uid"] == "gw-uid-1"
+        assert refs[0]["kind"] == "VmcpGateway"
 
 
 @pytest.mark.asyncio
 async def test_reconcile_mcp_updates_gateway_aggregate(runtime: OperatorRuntime) -> None:
+    patch = FakePatch()
     result = await handlers.reconcile_mcp(
         namespace="team-a",
         name="docs",
         spec=_mcp_spec(),
-        meta={},
+        meta={"uid": "mcp-uid-1", "generation": 2},
+        patch=patch,
+        body={
+            "apiVersion": "vmcp.io/v1alpha1",
+            "kind": "VmcpMcpServer",
+            "metadata": {"uid": "mcp-uid-1", "generation": 2},
+        },
     )
-    assert result["phase"] in {"Applied", "Registered"}
-    assert result["gateway"] == "team-a/main"
-    assert result["bundleSha256"]
-    assert "vmcp.io/unregister-before-gc" in result.get("addFinalizers", [])
+    assert result is None
+    assert patch.status["phase"] in {"Applied", "Registered"}
+    body: dict = {"metadata": {"finalizers": []}}
+    apply_fns_to_body(patch.fns, body)
+    assert "vmcp.io/unregister-before-gc" in body["metadata"]["finalizers"]
+    assert "team-a/main" in runtime.toucher.touches  # type: ignore[attr-defined]
 
 
 @pytest.mark.asyncio
 async def test_immutable_gateway_storage_class_rejected(runtime: OperatorRuntime) -> None:
-    result = await handlers.reconcile_gateway(
+    patch = FakePatch()
+    await handlers.reconcile_gateway(
         namespace="team-a",
         name="main",
         spec={
             **_gateway_spec(),
             "persistence": {"storageClassName": "fast", "size": "5Gi"},
         },
-        meta={},
+        meta=_meta(),
+        patch=patch,
         old={
             "spec": {
                 **_gateway_spec(),
@@ -136,8 +167,23 @@ async def test_immutable_gateway_storage_class_rejected(runtime: OperatorRuntime
             }
         },
     )
-    assert result["phase"] == "Invalid"
-    assert result["reason"] == "ImmutableField"
+    assert patch.status["phase"] == "Invalid"
+    assert patch.status["conditions"][0]["reason"] == "ImmutableField"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_gateway_without_uid_skips_owner(runtime: OperatorRuntime) -> None:
+    patch = FakePatch()
+    await handlers.reconcile_gateway(
+        namespace="team-a",
+        name="main",
+        spec=_gateway_spec(),
+        meta={"generation": 1},  # no uid
+        patch=patch,
+    )
+    assert patch.status["phase"] == "Applied"
+    for item in runtime.applier.applied:  # type: ignore[attr-defined]
+        assert "ownerReferences" not in item["body"].get("metadata", {})
 
 
 @pytest.mark.asyncio

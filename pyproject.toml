@@ -38,7 +38,7 @@ features = ["pyo3/abi3t-py315"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
+pythonpath = [".", "tests"]
 addopts = "-q"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
@@ -51,6 +51,7 @@ omit = [
     "python/vmcp_operator/adapters/driven/k8s/gateway_catalog.py",
     "python/vmcp_operator/adapters/driven/k8s/mcp_catalog.py",
     "python/vmcp_operator/adapters/driven/k8s/secret_loader.py",
+    "python/vmcp_operator/adapters/driven/k8s/gateway_toucher.py",
 ]
 
 [tool.coverage.report]

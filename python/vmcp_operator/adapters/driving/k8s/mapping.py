@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from typing import Any
 
 from vmcp_operator.domain.models.gateway import (
@@ -71,6 +72,11 @@ def map_gateway(namespace: str, name: str, spec: dict[str, Any]) -> GatewayDesir
         auth=_map_auth(spec.get("auth") or {}),
         skill_refs=tuple(_skill_ref(item) for item in spec.get("skillRefs") or ()),
         public_base_url=str(public_base).strip() if public_base else None,
+        attachments=tuple(
+            copy.deepcopy(item)
+            for item in (spec.get("attachments") or ())
+            if isinstance(item, dict)
+        ),
     )
 
 
@@ -189,7 +195,11 @@ def _map_auth(raw: dict[str, Any]) -> AuthDesired:
 
 
 def _secret_ref(raw: dict[str, Any], *, default_key: str = "token") -> SecretRef:
-    return SecretRef(name=str(raw["name"]), key=str(raw.get("key", default_key)))
+    return SecretRef(
+        name=str(raw["name"]),
+        key=str(raw.get("key", default_key)),
+        writable=bool(raw.get("writable", False)),
+    )
 
 
 def _route(raw: dict[str, Any], *, role: str) -> RouteDesired:
@@ -201,6 +211,11 @@ def _route(raw: dict[str, Any], *, role: str) -> RouteDesired:
     if role == "public":
         # Public edge never injects the hop secret.
         inject = False
+    extra = tuple(
+        copy.deepcopy(item)
+        for item in (raw.get("extraFilters") or ())
+        if isinstance(item, dict)
+    )
     return RouteDesired(
         hostname=str(raw["hostname"]),
         gateway_ref=GatewayParentRef(
@@ -209,8 +224,10 @@ def _route(raw: dict[str, Any], *, role: str) -> RouteDesired:
             section_name=ref.get("sectionName"),
         ),
         annotations=annotations,
-        strip_client_identity_headers=strip if role == "public" else False,
+        strip_client_identity_headers=strip,
         inject_forward_auth_header=inject,
+        manage=bool(raw.get("manage", True)),
+        extra_filters=extra,
     )
 
 

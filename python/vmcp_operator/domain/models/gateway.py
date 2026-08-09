@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import Any
 
 
 @dataclass(frozen=True, slots=True)
 class SecretRef:
     name: str
     key: str = "token"
+    # When true (admin tokens only): seed Secret into PVC once for Token CRUD.
+    writable: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,10 +27,14 @@ class RouteDesired:
     hostname: str
     gateway_ref: GatewayParentRef
     annotations: tuple[tuple[str, str], ...] = ()
-    # Public: strip client-forged Authentik / hop headers (defence in depth).
+    # Public/admin: strip client-forged Authentik / hop headers (defence in depth).
     strip_client_identity_headers: bool = True
     # Admin: set hop header from forwardAuthSecretRef (None = auto when secret set).
     inject_forward_auth_header: bool | None = None
+    # When false, operator does not render/apply this HTTPRoute (BYO).
+    manage: bool = True
+    # Extra Gateway API HTTPRouteFilter objects merged after built-in strip/inject.
+    extra_filters: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,6 +135,8 @@ class GatewayDesired:
     # Override derived ``https://{publicRoute.hostname}`` in vmcp.toml.
     public_base_url: str | None = None
     generation: int = 1
+    # Opaque vendor objects (e.g. kgateway TrafficPolicy) applied with ownerRefs.
+    attachments: tuple[dict[str, Any], ...] = ()
 
 
 # Headers clients must never supply on the public edge (issue #4 Gap 1).

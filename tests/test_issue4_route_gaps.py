@@ -91,7 +91,11 @@ def test_gap2_admin_route_sets_hop_header_when_value_provided() -> None:
     )
     admin = next(m for m in manifests if m["metadata"]["name"] == "vmcp-admin")
     filters = admin["spec"]["rules"][0]["filters"]
-    assert filters[0]["requestHeaderModifier"]["set"] == [
+    # remove (strip) then set (hop inject)
+    removed = {h.lower() for h in filters[0]["requestHeaderModifier"]["remove"]}
+    for header in PUBLIC_STRIP_IDENTITY_HEADERS:
+        assert header.lower() in removed
+    assert filters[1]["requestHeaderModifier"]["set"] == [
         {"name": "X-Vmcp-Forward-Auth", "value": "s3cr3t"}
     ]
 
@@ -99,7 +103,10 @@ def test_gap2_admin_route_sets_hop_header_when_value_provided() -> None:
 def test_gap2_admin_omits_set_without_secret_value() -> None:
     manifests = RenderGatewayManifests().execute(_ak_gateway(), _artifacts())
     admin = next(m for m in manifests if m["metadata"]["name"] == "vmcp-admin")
-    assert "filters" not in admin["spec"]["rules"][0]
+    filters = admin["spec"]["rules"][0]["filters"]
+    assert len(filters) == 1
+    assert "remove" in filters[0]["requestHeaderModifier"]
+    assert "set" not in filters[0]["requestHeaderModifier"]
 
 
 def test_gap3_enable_service_links_false() -> None:
@@ -148,10 +155,12 @@ async def test_reconcile_materializes_hop_secret_into_admin_route() -> None:
         if item["body"].get("kind") == "HTTPRoute"
         and item["body"]["metadata"]["name"] == "vmcp-admin"
     )
-    assert (
-        admin["spec"]["rules"][0]["filters"][0]["requestHeaderModifier"]["set"][0]["value"]
-        == "from-k8s"
-    )
+    set_filters = [
+        f
+        for f in admin["spec"]["rules"][0]["filters"]
+        if "set" in f.get("requestHeaderModifier", {})
+    ]
+    assert set_filters[0]["requestHeaderModifier"]["set"][0]["value"] == "from-k8s"
 
 
 @pytest.mark.asyncio
@@ -224,6 +233,60 @@ def test_public_strip_can_be_disabled_and_annotations_pass() -> None:
     assert admin["metadata"]["annotations"]["c"] == "d"
     # inject=None + secret present → set filter when value provided
     assert admin["spec"]["rules"][0]["filters"]
+
+
+def test_writable_tokens_seed_and_toml_path() -> None:
+    gw = _ak_gateway()
+    gw = GatewayDesired(
+        key=gw.key,
+        image=gw.image,
+        admin_token_secret_ref=SecretRef(name="tokens", writable=True),
+        master_password_secret_ref=gw.master_password_secret_ref,
+        public_route=gw.public_route,
+        admin_route=gw.admin_route,
+        auth=gw.auth,
+        public_base_url=gw.public_base_url,
+    )
+    assert 'tokens_file = "/state/tokens.json"' in render_gateway_config(gw)
+    deploy = next(
+        m for m in RenderGatewayManifests().execute(gw, _artifacts()) if m["kind"] == "Deployment"
+    )
+    mounts = deploy["spec"]["template"]["spec"]["containers"][0]["volumeMounts"]
+    assert not any(m["mountPath"] == "/secrets" for m in mounts)
+    init = deploy["spec"]["template"]["spec"]["initContainers"][0]
+    assert "/state/tokens.json" in init["args"][0]
+    assert any(m["mountPath"] == "/secrets-bootstrap" for m in init["volumeMounts"])
+
+
+def test_byo_manage_false_and_extra_filters() -> None:
+    gw = _ak_gateway()
+    gw = GatewayDesired(
+        key=gw.key,
+        image=gw.image,
+        admin_token_secret_ref=gw.admin_token_secret_ref,
+        master_password_secret_ref=gw.master_password_secret_ref,
+        public_route=RouteDesired(
+            hostname="main.example.com",
+            gateway_ref=GatewayParentRef(name="kgateway"),
+            manage=False,
+        ),
+        admin_route=RouteDesired(
+            hostname="admin.example.com",
+            gateway_ref=GatewayParentRef(name="kgateway"),
+            inject_forward_auth_header=True,
+            extra_filters=({"type": "RequestRedirect", "requestRedirect": {"scheme": "https"}},),
+        ),
+        auth=gw.auth,
+    )
+    manifests = RenderGatewayManifests().execute(
+        gw, _artifacts(), forward_auth_header_value="hop"
+    )
+    names = {m["metadata"]["name"] for m in manifests if m["kind"] == "HTTPRoute"}
+    assert "vmcp-public" not in names
+    assert "vmcp-admin" in names
+    admin = next(m for m in manifests if m["metadata"]["name"] == "vmcp-admin")
+    types = [f["type"] for f in admin["spec"]["rules"][0]["filters"]]
+    assert "RequestRedirect" in types
 
 
 def test_runtime_modes(monkeypatch: pytest.MonkeyPatch) -> None:

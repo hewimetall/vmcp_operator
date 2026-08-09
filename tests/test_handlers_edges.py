@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import pytest
 
+from fake_patch import FakePatch
 from vmcp_operator.adapters.driven.k8s.ssa import InMemoryApplier, ServerSideApply
 from vmcp_operator.adapters.driving.k8s import handlers
+from vmcp_operator.adapters.driving.k8s.finalizer_patch import apply_fns_to_body
 from vmcp_operator.adapters.driving.k8s.reconcile import McpReconcile
 from vmcp_operator.adapters.driving.k8s.runtime import (
     EmptySkillLoader,
@@ -75,16 +77,21 @@ def runtime():
 
 @pytest.mark.asyncio
 async def test_gateway_delete_blocked_while_children_remain(runtime: OperatorRuntime) -> None:
-    result = await handlers.reconcile_gateway(
+    patch = FakePatch()
+    await handlers.reconcile_gateway(
         namespace="team-a",
         name="main",
         spec=_gateway_spec(),
         meta={
+            "uid": "gw-1",
+            "generation": 1,
             "deletionTimestamp": "2026-01-01T00:00:00Z",
             "finalizers": ["vmcp.io/gateway-protection"],
         },
+        patch=patch,
     )
-    assert result["phase"] == "Deleting"
+    assert patch.status["phase"] == "Deleting"
+    assert patch.fns == []
 
 
 @pytest.mark.asyncio
@@ -93,17 +100,23 @@ async def test_gateway_finalize_when_no_children() -> None:
     rt = OperatorRuntime.in_memory(gateways={gw.key.as_str(): gw}, mcps={})
     set_runtime(rt)
     try:
-        result = await handlers.reconcile_gateway(
+        patch = FakePatch()
+        await handlers.reconcile_gateway(
             namespace="team-a",
             name="main",
             spec=_gateway_spec(),
             meta={
+                "uid": "gw-1",
+                "generation": 1,
                 "deletionTimestamp": "2026-01-01T00:00:00Z",
                 "finalizers": ["vmcp.io/gateway-protection"],
             },
+            patch=patch,
         )
-        assert result["phase"] == "Finalized"
-        assert "vmcp.io/gateway-protection" in result["removeFinalizers"]
+        assert patch.status["phase"] == "Finalized"
+        body: dict = {"metadata": {"finalizers": ["vmcp.io/gateway-protection"]}}
+        apply_fns_to_body(patch.fns, body)
+        assert body["metadata"]["finalizers"] == []
     finally:
         set_runtime(None)
 
@@ -117,27 +130,31 @@ async def test_mcp_pending_gateway_and_immutable(runtime: OperatorRuntime) -> No
         )
     )
     try:
-        result = await handlers.reconcile_mcp(
+        patch = FakePatch()
+        await handlers.reconcile_mcp(
             namespace="team-a",
             name="docs",
             spec={
                 "gatewayRef": {"name": "main"},
                 "source": {"type": "RemoteHttp", "url": "https://docs.example/mcp"},
             },
-            meta={},
+            meta={"uid": "mcp-1", "generation": 1},
+            patch=patch,
         )
-        assert result["phase"] == "PendingGateway"
+        assert patch.status["phase"] == "PendingGateway"
     finally:
         set_runtime(runtime)
 
-    result = await handlers.reconcile_mcp(
+    patch = FakePatch()
+    await handlers.reconcile_mcp(
         namespace="team-a",
         name="docs",
         spec={
             "gatewayRef": {"name": "other"},
             "source": {"type": "RemoteHttp", "url": "https://docs.example/mcp"},
         },
-        meta={},
+        meta={"uid": "mcp-1", "generation": 1},
+        patch=patch,
         old={
             "spec": {
                 "gatewayRef": {"name": "main"},
@@ -145,12 +162,13 @@ async def test_mcp_pending_gateway_and_immutable(runtime: OperatorRuntime) -> No
             }
         },
     )
-    assert result["phase"] == "Invalid"
+    assert patch.status["phase"] == "Invalid"
 
 
 @pytest.mark.asyncio
 async def test_mcp_finalize_on_delete(runtime: OperatorRuntime) -> None:
-    result = await handlers.reconcile_mcp(
+    patch = FakePatch()
+    await handlers.reconcile_mcp(
         namespace="team-a",
         name="docs",
         spec={
@@ -158,12 +176,16 @@ async def test_mcp_finalize_on_delete(runtime: OperatorRuntime) -> None:
             "source": {"type": "RemoteHttp", "url": "https://docs.example/mcp"},
         },
         meta={
+            "uid": "mcp-1",
+            "generation": 1,
             "deletionTimestamp": "2026-01-01T00:00:00Z",
             "finalizers": ["vmcp.io/unregister-before-gc"],
         },
+        patch=patch,
     )
-    assert result["phase"] == "Finalized"
+    assert patch.status["phase"] == "Finalized"
     assert "team-a/main" in runtime.pending
+    assert "team-a/main" in runtime.toucher.touches  # type: ignore[attr-defined]
 
 
 @pytest.mark.asyncio
@@ -172,7 +194,8 @@ async def test_mcp_delete_blocks_when_unregister_fails(runtime: OperatorRuntime)
         return False
 
     runtime.unregister_upstream = _fail
-    result = await handlers.reconcile_mcp(
+    patch = FakePatch()
+    await handlers.reconcile_mcp(
         namespace="team-a",
         name="docs",
         spec={
@@ -180,11 +203,14 @@ async def test_mcp_delete_blocks_when_unregister_fails(runtime: OperatorRuntime)
             "source": {"type": "RemoteHttp", "url": "https://docs.example/mcp"},
         },
         meta={
+            "uid": "mcp-1",
+            "generation": 1,
             "deletionTimestamp": "2026-01-01T00:00:00Z",
             "finalizers": ["vmcp.io/unregister-before-gc"],
         },
+        patch=patch,
     )
-    assert result["phase"] == "Deleting"
+    assert patch.status["phase"] == "Deleting"
 
 
 @pytest.mark.asyncio
@@ -214,9 +240,17 @@ async def test_mcp_reconcile_applies_container_workload() -> None:
         ),
     )
     applier = InMemoryApplier()
+    owner = {
+        "apiVersion": "vmcp.io/v1alpha1",
+        "kind": "VmcpMcpServer",
+        "metadata": {"name": "architect-c4", "namespace": "team-a", "uid": "mcp-uid"},
+    }
     result = await McpReconcile(
         manifests=RenderMcpManifests(),
         apply=ServerSideApply(applier=applier),
-    ).execute(gw, mcp)
+    ).execute(gw, mcp, owner=owner)
     assert result["phase"] == "Applied"
     assert result["objects"] == 2
+    for item in applier.applied:
+        refs = item["body"]["metadata"]["ownerReferences"]
+        assert refs[0]["uid"] == "mcp-uid"

@@ -66,9 +66,17 @@ spec:
                     key:
                       type: string
                       default: token
+                    writable:
+                      type: boolean
+                      default: false
+                      description: >
+                        When true, seed tokens.json onto the Gateway PVC at
+                        /state/tokens.json (copy only if missing) so admin Token
+                        CRUD can persist. Default false mounts the Secret
+                        read-only at /secrets/tokens.json.
                   description: >
                     Secret with tokens.json body (key default `token`) for
-                    bootstrap/admin API access; mounted at /secrets/tokens.json.
+                    bootstrap/admin API access.
                 masterPasswordSecretRef:
                   type: object
                   required: [name]
@@ -112,6 +120,18 @@ spec:
                         Defence in depth: HTTPRoute RequestHeaderModifier removes
                         client-supplied X-authentik-* and X-Vmcp-Forward-Auth on the
                         public edge (issue #4 Gap 1).
+                    manage:
+                      type: boolean
+                      default: true
+                      description: >
+                        When false, operator does not render/apply this HTTPRoute
+                        (bring-your-own route).
+                    extraFilters:
+                      type: array
+                      description: Extra Gateway API HTTPRouteFilter objects.
+                      items:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
                 adminRoute:
                   type: object
                   description: Optional distinct hostname exposing only /admin.
@@ -131,6 +151,12 @@ spec:
                       type: object
                       additionalProperties:
                         type: string
+                    stripClientIdentityHeaders:
+                      type: boolean
+                      default: true
+                      description: >
+                        Same identity-header strip as the public route (defence in
+                        depth for /admin).
                     injectForwardAuthHeader:
                       type: boolean
                       description: >
@@ -138,6 +164,25 @@ spec:
                         set), admin HTTPRoute sets the hop header from that Secret
                         so browser /admin passes hop trust after Authentik
                         forward-auth (issue #4 Gap 2).
+                    manage:
+                      type: boolean
+                      default: true
+                      description: >
+                        When false, operator does not render/apply the admin HTTPRoute.
+                    extraFilters:
+                      type: array
+                      description: Extra Gateway API HTTPRouteFilter objects.
+                      items:
+                        type: object
+                        x-kubernetes-preserve-unknown-fields: true
+                attachments:
+                  type: array
+                  description: >
+                    Opaque same-namespace objects (e.g. kgateway TrafficPolicy)
+                    applied with ownerReferences to this Gateway.
+                  items:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
                 persistence:
                   type: object
                   properties:

@@ -8,8 +8,13 @@ from typing import Any
 import kopf
 
 from vmcp_operator.adapters.driving.k8s.enqueue import GATEWAY_LABEL, should_enqueue_child
+from vmcp_operator.adapters.driving.k8s.finalizer_patch import (
+    schedule_finalizer_adds,
+    schedule_finalizer_removes,
+)
 from vmcp_operator.adapters.driving.k8s.mapping import map_gateway, map_mcp
 from vmcp_operator.adapters.driving.k8s.runtime import get_runtime
+from vmcp_operator.adapters.driving.k8s.status_patch import apply_status, generation_of
 from vmcp_operator.domain.models.gateway import GatewayKey
 from vmcp_operator.domain.usecases.finalizers import (
     MCP_FINALIZER,
@@ -39,6 +44,25 @@ def _lock_for(key: GatewayKey) -> Any:
     return lock
 
 
+def _owner_body(
+    *,
+    api_version: str,
+    kind: str,
+    namespace: str,
+    name: str,
+    meta: dict[str, Any],
+    body: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    uid = meta.get("uid") or ((body or {}).get("metadata") or {}).get("uid")
+    if not uid:
+        return None
+    return {
+        "apiVersion": api_version,
+        "kind": kind,
+        "metadata": {"name": name, "namespace": namespace, "uid": uid},
+    }
+
+
 @kopf.on.startup()
 async def configure(settings: kopf.OperatorSettings, **_: Any) -> None:
     settings.posting.enabled = True
@@ -53,23 +77,37 @@ async def reconcile_gateway(
     name: str,
     spec: dict[str, Any],
     meta: dict[str, Any],
+    patch: kopf.Patch,
+    body: dict[str, Any] | None = None,
     old: dict[str, Any] | None = None,
     **_: Any,
-) -> dict[str, Any]:
+) -> None:
+    generation = generation_of(meta, body)
     if old and "spec" in old:
         violations = check_gateway_immutables(old["spec"], spec)
         if violations:
-            return {
-                "phase": "Invalid",
-                "gateway": f"{namespace}/{name}",
-                "reason": violations[0].reason,
-                "message": violations[0].message,
-            }
+            apply_status(
+                patch,
+                phase="Invalid",
+                generation=generation,
+                reason=violations[0].reason,
+                message=violations[0].message,
+                ready=False,
+            )
+            return
 
     gateway = map_gateway(namespace, name, spec)
     runtime = get_runtime()
     deleting = bool(meta.get("deletionTimestamp"))
     finalizers = tuple(meta.get("finalizers") or [])
+    owner = _owner_body(
+        api_version="vmcp.io/v1alpha1",
+        kind="VmcpGateway",
+        namespace=namespace,
+        name=name,
+        meta=meta,
+        body=body,
+    )
     async with _lock_for(gateway.key):
         mcps = await runtime.list_mcps(gateway.key)
         decision = plan_gateway_finalizer(
@@ -78,21 +116,41 @@ async def reconcile_gateway(
             children_remaining=len(mcps) if deleting else 0,
         )
         if decision.block_delete:
-            return {
-                "phase": "Deleting",
-                "gateway": gateway.key.as_str(),
-                "reason": decision.reason or "blocked",
-            }
+            apply_status(
+                patch,
+                phase="Deleting",
+                generation=generation,
+                reason=decision.reason or "blocked",
+                message=decision.reason or "blocked",
+                ready=False,
+            )
+            return
         if deleting and decision.remove:
-            return {
-                "phase": "Finalized",
-                "gateway": gateway.key.as_str(),
-                "removeFinalizers": list(decision.remove),
-            }
-        result = await runtime.gateway_reconcile.execute(gateway, mcps)
+            schedule_finalizer_removes(patch, decision.remove)
+            apply_status(
+                patch,
+                phase="Finalized",
+                generation=generation,
+                reason="ready to finalize",
+                message="finalizers removed",
+                ready=True,
+            )
+            return
+        result = await runtime.gateway_reconcile.execute(gateway, mcps, owner=owner)
         if decision.add:
-            result = {**result, "addFinalizers": list(decision.add)}
-        return result
+            schedule_finalizer_adds(patch, decision.add)
+        apply_status(
+            patch,
+            phase=str(result.get("phase", "Applied")),
+            generation=generation,
+            artifact_sha256=str(result.get("bundleSha256") or "") or None,
+            reason="Applied",
+            message=(
+                f"objects={result.get('objects', 0)} "
+                f"adminHopHeaderInjected={result.get('adminHopHeaderInjected', False)}"
+            ),
+            ready=True,
+        )
 
 
 @kopf.on.create("vmcp.io", "v1alpha1", "vmcpmcpservers")
@@ -103,23 +161,37 @@ async def reconcile_mcp(
     name: str,
     spec: dict[str, Any],
     meta: dict[str, Any],
+    patch: kopf.Patch,
+    body: dict[str, Any] | None = None,
     old: dict[str, Any] | None = None,
     **_: Any,
-) -> dict[str, Any]:
+) -> None:
+    generation = generation_of(meta, body)
     if old and "spec" in old:
         violations = check_mcp_immutables(old["spec"], spec)
         if violations:
-            return {
-                "phase": "Invalid",
-                "gateway": f"{namespace}/{spec.get('gatewayRef', {}).get('name', '')}",
-                "reason": violations[0].reason,
-                "message": violations[0].message,
-            }
+            apply_status(
+                patch,
+                phase="Invalid",
+                generation=generation,
+                reason=violations[0].reason,
+                message=violations[0].message,
+                ready=False,
+            )
+            return
 
     mcp = map_mcp(namespace, name, spec)
     runtime = get_runtime()
     deleting = bool(meta.get("deletionTimestamp"))
     finalizers = tuple(meta.get("finalizers") or [])
+    owner = _owner_body(
+        api_version="vmcp.io/v1alpha1",
+        kind="VmcpMcpServer",
+        namespace=namespace,
+        name=name,
+        meta=meta,
+        body=body,
+    )
     async with _lock_for(mcp.gateway_key):
         gateway = await runtime.get_gateway(mcp.gateway_key)
         unregistered = False
@@ -138,37 +210,71 @@ async def reconcile_mcp(
             unregistered_from_vmcp=unregistered,
         )
         if decision.block_delete:
-            return {
-                "phase": "Deleting",
-                "gateway": mcp.gateway_key.as_str(),
-                "reason": decision.reason or "blocked",
-            }
+            apply_status(
+                patch,
+                phase="Deleting",
+                generation=generation,
+                reason=decision.reason or "blocked",
+                message=decision.reason or "blocked",
+                ready=False,
+            )
+            return
         if deleting and decision.remove:
-            runtime.enqueue(mcp.gateway_key)
-            return {
-                "phase": "Finalized",
-                "gateway": mcp.gateway_key.as_str(),
-                "removeFinalizers": list(decision.remove),
-            }
+            schedule_finalizer_removes(patch, decision.remove)
+            await runtime.touch_gateway(mcp.gateway_key)
+            apply_status(
+                patch,
+                phase="Finalized",
+                generation=generation,
+                reason="unregistered",
+                message="finalizers removed",
+                ready=True,
+            )
+            return
         if gateway is None:
-            runtime.enqueue(mcp.gateway_key)
-            return {
-                "phase": "PendingGateway",
-                "gateway": mcp.gateway_key.as_str(),
-                "addFinalizers": list(decision.add) if decision.add else [MCP_FINALIZER],
-            }
-        mcp_result = await runtime.mcp_reconcile.execute(gateway, mcp)
+            adds = decision.add if decision.add else (MCP_FINALIZER,)
+            schedule_finalizer_adds(patch, adds)
+            await runtime.touch_gateway(mcp.gateway_key)
+            apply_status(
+                patch,
+                phase="PendingGateway",
+                generation=generation,
+                reason="PendingGateway",
+                message=f"gateway {mcp.gateway_key.as_str()} not found",
+                ready=False,
+            )
+            return
+        mcp_result = await runtime.mcp_reconcile.execute(gateway, mcp, owner=owner)
         mcps = await runtime.list_mcps(mcp.gateway_key)
         # Keep gateway aggregate registry in sync when MCP changes.
-        gateway_result = await runtime.gateway_reconcile.execute(gateway, mcps)
-        result = {
-            **mcp_result,
-            "bundleSha256": gateway_result.get("bundleSha256", ""),
-            "gatewayObjects": gateway_result.get("objects", 0),
-        }
+        await runtime.gateway_reconcile.execute(
+            gateway,
+            mcps,
+            owner=_gateway_owner_stub(gateway.key),
+        )
         if decision.add:
-            result["addFinalizers"] = list(decision.add)
-        return result
+            schedule_finalizer_adds(patch, decision.add)
+        await runtime.touch_gateway(mcp.gateway_key)
+        apply_status(
+            patch,
+            phase=str(mcp_result.get("phase", "Applied")),
+            generation=generation,
+            reason="Applied",
+            message=(
+                f"gateway={mcp.gateway_key.as_str()} objects={mcp_result.get('objects', 0)}"
+            ),
+            ready=True,
+        )
+
+
+def _gateway_owner_stub(key: GatewayKey) -> dict[str, Any] | None:
+    """Owner for nested gateway re-apply from MCP path.
+
+    Without the live Gateway uid we skip owner attachment on this secondary apply;
+    the primary Gateway reconcile (woken via touch) re-asserts ownerReferences.
+    """
+    del key
+    return None
 
 
 @kopf.on.event("apps", "v1", "deployments", labels={GATEWAY_LABEL: kopf.PRESENT})
