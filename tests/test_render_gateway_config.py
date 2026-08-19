@@ -9,6 +9,7 @@ from vmcp_operator.domain.models.gateway import (
     GatewayDesired,
     GatewayKey,
     GatewayParentRef,
+    GqlDesired,
     ProxyDesired,
     RouteDesired,
     SecretRef,
@@ -41,6 +42,19 @@ def test_render_local_auth_defaults() -> None:
     assert 'mode = "basic"' in text
     assert "[auth.authentik]" not in text
     assert 'tokens_file = "/secrets/tokens.json"' in text
+    assert "gcf = false" in text
+
+
+def test_render_gcf_flags() -> None:
+    text = render_gateway_config(
+        _gateway(
+            gql=GqlDesired(gcf=True),
+            proxy=ProxyDesired(enabled=True, gcf=True),
+        )
+    )
+    assert "[gql]" in text
+    assert "gcf = true" in text
+    assert text.count("gcf = true") == 2
 
 
 def test_render_authentik_hop_trust_and_proxy_tasks() -> None:

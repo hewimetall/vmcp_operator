@@ -2,7 +2,8 @@
 //!
 //! Upstream source of truth:
 //! `hewimetall/vmcp` `crates/vmcp-graphql/src/lib.rs` (`pascal_case` / `camel_case`)
-//! at rev `450f7426477b78b554b2463cb13a5c2268eab000` (vmcp v1.2.0).
+//! at rev `450f7426477b78b554b2463cb13a5c2268eab000` (vmcp v1.2.0; registry
+//! crate unchanged in v1.3.0).
 //! We keep a local copy so `vmcp-op-core` does not pull the heavy GraphQL crate.
 
 use std::collections::BTreeMap;

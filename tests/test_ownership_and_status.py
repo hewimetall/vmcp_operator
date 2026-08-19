@@ -55,10 +55,12 @@ def test_status_and_finalizer_patch_helpers() -> None:
         artifact_sha256="abc",
         reason="Applied",
         message="ok",
+        listener_policy={"phase": "Applied", "message": "lp"},
     )
     assert patch.status["phase"] == "Applied"
     assert patch.status["observedGeneration"] == 4
     assert patch.status["artifactSha256"] == "abc"
+    assert patch.status["listenerPolicy"] == {"phase": "Applied", "message": "lp"}
     assert patch.status["conditions"][0]["type"] == "Ready"
     schedule_finalizer_adds(patch, ("vmcp.io/gateway-protection",))
     schedule_finalizer_removes(patch, ("vmcp.io/gateway-protection",))
@@ -152,6 +154,7 @@ async def test_recording_toucher_and_gateway_attachments() -> None:
     kinds = [item["body"]["kind"] for item in applier.applied]
     assert "HTTPRoute" not in kinds
     assert "TrafficPolicy" in kinds
+    assert "ListenerPolicy" in kinds
     policy = next(
         item["body"]
         for item in applier.applied

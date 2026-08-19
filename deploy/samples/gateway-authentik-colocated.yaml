@@ -1,13 +1,17 @@
-# Same-host admin: one hostname, /admin is a distinct HTTPRoute.
+# Colocated parent Gateway: VmcpGateway and Gateway share namespace team-a.
 #
-# public  PathPrefix /       — identity headers stripped (HTTPRoute, after auth)
-# admin   PathPrefix /admin  — hop header injected; Authentik headers kept
-#                             so kgateway extAuth (TrafficPolicy) can set them
-# Parent Gateway is in gateway-system → no ListenerPolicy (cross-namespace).
+# That is the only layout where the operator can apply a kgateway
+# ListenerPolicy earlyRequestHeaderModifier (policy and Gateway must be
+# same-namespace). Order matches vmcp ADR 0001:
+#   1. ListenerPolicy strips client X-authentik-* and hop header (before extAuth)
+#   2. TrafficPolicy / Authentik re-injects identity on /admin
+#   3. admin HTTPRoute sets the hop secret (after extAuth)
+#
+# Create a Gateway in team-a (or omit gatewayRef.namespace) before applying this.
 apiVersion: vmcp.io/v1alpha1
 kind: VmcpGateway
 metadata:
-  name: main-shared-host
+  name: main-colocated
   namespace: team-a
 spec:
   image: registry.example.com/ai/vmcp:1.3.0
@@ -20,24 +24,29 @@ spec:
     hostname: vmcp.example.com
     gatewayRef:
       name: kgateway
-      namespace: gateway-system
       sectionName: https
     stripClientIdentityHeaders: true
   adminRoute:
-    # hostname / gatewayRef inherited from publicRoute
     path: /admin
     injectForwardAuthHeader: true
     stripClientIdentityHeaders: true
+  # identityStrip:
+  #   manageListenerPolicy: false   # BYO ListenerPolicy in this namespace
+  gql:
+    gcf: false
+  proxy:
+    enabled: false
+    gcf: false
   attachments:
     - apiVersion: gateway.kgateway.dev/v1alpha1
       kind: TrafficPolicy
       metadata:
-        name: main-shared-host-admin-extauth
+        name: main-colocated-admin-extauth
       spec:
         targetRefs:
           - group: gateway.networking.k8s.io
             kind: HTTPRoute
-            name: main-shared-host-admin
+            name: main-colocated-admin
   auth:
     enabled: true
     provider: authentik
@@ -54,3 +63,6 @@ spec:
       forwardAuthSecretRef:
         name: main-forward-auth
         key: secret
+      groupScopes:
+        dayana: "mcp:use upstream:dayana"
+        mcp-admins: "mcp:admin"

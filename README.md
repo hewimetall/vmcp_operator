@@ -68,7 +68,8 @@ free-threaded CPython 3.15t image builds do not need `UV_OVERRIDE`.
 
 Phase −1 compatibility results: [docs/phase-minus-one.md](docs/phase-minus-one.md).
 
-Gateway contract (vmcp **≥1.2** AuthFacade / hop trust / `forward_identity`):
+Gateway contract (vmcp **≥1.3** recommended: G25 catalog + optional GCF;
+**≥1.2** AuthFacade / hop trust / `forward_identity`):
 [docs/compatibility.md](docs/compatibility.md).
 
 Operator control plane **above** vmcp (MCP add/remove/update + NL CRUD,

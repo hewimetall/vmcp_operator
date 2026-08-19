@@ -13,7 +13,10 @@ from vmcp_operator.domain.models.gateway import GatewayDesired
 from vmcp_operator.domain.models.mcp import McpServerDesired
 from vmcp_operator.domain.ports.secrets import SecretValueLoader
 from vmcp_operator.domain.usecases.reconcile_artifacts import ReconcileGatewayArtifacts
-from vmcp_operator.domain.usecases.render_gateway_manifests import RenderGatewayManifests
+from vmcp_operator.domain.usecases.render_gateway_manifests import (
+    RenderGatewayManifests,
+    plan_early_identity_strip,
+)
 from vmcp_operator.domain.usecases.render_mcp_manifests import RenderMcpManifests
 
 
@@ -38,7 +41,8 @@ class GatewayReconcile:
         objects = self.manifests.execute(
             gateway, bundle, mcps, forward_auth_header_value=hop_value
         )
-        for obj in objects:
+        strip = plan_early_identity_strip(gateway)
+        for obj in (*objects, *strip.objects):
             if owner is not None:
                 attach_owner(obj, owner)
             await self.apply.apply(obj)
@@ -51,9 +55,11 @@ class GatewayReconcile:
             "phase": "Applied",
             "gateway": gateway.key.as_str(),
             "bundleSha256": bundle.bundle_sha256,
-            "objects": len(objects) + len(gateway.attachments),
+            "objects": len(objects) + len(strip.objects) + len(gateway.attachments),
             "adminHopHeaderInjected": bool(hop_value)
             and _wants_admin_hop_inject(gateway),
+            "listenerPolicy": strip.phase,
+            "listenerPolicyMessage": strip.message,
         }
 
     async def _load_hop_secret(self, gateway: GatewayDesired) -> str | None:

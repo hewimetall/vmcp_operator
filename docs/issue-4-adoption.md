@@ -50,8 +50,11 @@ set are **one** `RequestHeaderModifier` (Gateway API allows only one per rule).
 
 When hop inject is enabled, Authentik identity headers are **not** removed on
 that route: kgateway runs HTTPRoute header modifiers after extAuth, so a strip
-would delete `X-authentik-username` and break login (issue #8). Use a kgateway
-`ListenerPolicy` `earlyRequestHeaderModifier` for pre-auth client-header strip.
+would delete `X-authentik-username` and break login (issue #8). The operator
+applies a kgateway `ListenerPolicy` `earlyRequestHeaderModifier` when the parent
+Gateway is in the **same namespace** as the VmcpGateway (see
+[docs/issue-8-adoption.md](issue-8-adoption.md)). Cross-namespace parents skip
+that policy (`status.listenerPolicy=SkippedCrossNamespace`).
 
 `hostname` may be omitted so admin shares `publicRoute.hostname` at `path`
 (default `/admin`). `gatewayRef` inherits the same way.

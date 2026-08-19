@@ -4,7 +4,7 @@ metadata:
   name: main-ak
   namespace: team-a
 spec:
-  image: registry.example.com/ai/vmcp:1.2.0
+  image: registry.example.com/ai/vmcp:1.3.0
   adminTokenSecretRef:
     name: main-admin-tokens
     # writable: true   # seed /state/tokens.json once for admin Token CRUD
@@ -34,6 +34,9 @@ spec:
     # Default true — merged into the same RequestHeaderModifier as hop inject.
     # Authentik identity headers are kept when inject is on (HTTPRoute RHM
     # runs after kgateway extAuth; stripping them breaks login — issue #8).
+    # Parent Gateway is in gateway-system → ListenerPolicy is skipped
+    # (status.listenerPolicy=SkippedCrossNamespace). Colocate for pre-auth
+    # strip: deploy/samples/gateway-authentik-colocated.yaml.
     stripClientIdentityHeaders: true
     # Default true when forwardAuthSecretRef is set — inject hop header at edge.
     injectForwardAuthHeader: true
@@ -63,6 +66,8 @@ spec:
       forwardAuthSecretRef:
         name: main-forward-auth
         key: secret
+      # vmcp ≥1.3 G25: `upstream:<name>` hides other namespaces in the catalog.
       groupScopes:
         mcp-users: "mcp:use"
+        dayana: "mcp:use upstream:dayana"
         mcp-admins: "mcp:admin"

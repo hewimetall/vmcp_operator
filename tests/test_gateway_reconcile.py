@@ -57,9 +57,10 @@ async def test_gateway_reconcile_applies_manifest_set() -> None:
         apply=ServerSideApply(applier=applier),
     ).execute(gateway, mcps)
     assert result["phase"] == "Applied"
-    assert result["objects"] == 5
+    assert result["objects"] == 6
+    assert result["listenerPolicy"] == "Applied"
     assert applier.applied is not None
-    assert len(applier.applied) == 5
+    assert len(applier.applied) == 6
     kinds = [item["body"]["kind"] for item in applier.applied]
     assert kinds == [
         "PersistentVolumeClaim",
@@ -67,4 +68,5 @@ async def test_gateway_reconcile_applies_manifest_set() -> None:
         "Service",
         "Deployment",
         "HTTPRoute",
+        "ListenerPolicy",
     ]

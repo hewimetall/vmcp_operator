@@ -21,7 +21,10 @@ from vmcp_operator.domain.models.gateway import (
     SecretRef,
 )
 from vmcp_operator.domain.usecases.list_environments import ListEnvironments
-from vmcp_operator.domain.usecases.render_gateway_manifests import RenderGatewayManifests
+from vmcp_operator.domain.usecases.render_gateway_manifests import (
+    RenderGatewayManifests,
+    plan_early_identity_strip,
+)
 
 
 def _artifacts() -> ArtifactBundle:
@@ -347,3 +350,187 @@ async def test_invalid_mcp_spec_sets_status_not_crash() -> None:
         assert patch.status["conditions"][0]["reason"] == "InvalidSpec"
     finally:
         set_runtime(None)
+
+
+def test_map_gcf_and_identity_strip() -> None:
+    spec = _base_spec()
+    spec["gql"] = {"gcf": True, "maxDepth": 8}
+    spec["proxy"] = {"enabled": True, "gcf": True}
+    spec["identityStrip"] = {"manageListenerPolicy": False}
+    gw = map_gateway("team-a", "gateway", spec)
+    assert gw.gql.gcf is True
+    assert gw.gql.max_depth == 8
+    assert gw.proxy.gcf is True
+    assert gw.identity_strip.manage_listener_policy is False
+
+
+def test_map_colocated_sample() -> None:
+    doc = yaml.safe_load(
+        Path("deploy/samples/gateway-authentik-colocated.yaml").read_text(encoding="utf-8")
+    )
+    gw = map_gateway(doc["metadata"]["namespace"], doc["metadata"]["name"], doc["spec"])
+    assert gw.public_route.gateway_ref.namespace is None
+    assert gw.admin_route is not None
+    assert gw.admin_route.hostname == gw.public_route.hostname
+    assert ("dayana", "mcp:use upstream:dayana") in gw.auth.authentik.group_scopes
+    plan = plan_early_identity_strip(gw)
+    assert plan.phase == "Applied"
+    policy = plan.objects[0]
+    assert policy["kind"] == "ListenerPolicy"
+    assert policy["metadata"]["namespace"] == "team-a"
+    assert policy["spec"]["targetRefs"][0]["sectionName"] == "https"
+    removed = {
+        h.lower()
+        for h in policy["spec"]["default"]["httpSettings"]["earlyRequestHeaderModifier"][
+            "remove"
+        ]
+    }
+    assert "x-authentik-username" in removed
+    assert "x-vmcp-forward-auth" in removed
+
+
+def test_early_strip_skipped_when_parent_is_cross_namespace() -> None:
+    spec = _base_spec()
+    gw = map_gateway("vmcp", "gateway", spec)
+    plan = plan_early_identity_strip(gw)
+    assert plan.phase == "SkippedCrossNamespace"
+    assert plan.objects == ()
+    assert "gw/kgateway" in plan.message
+
+
+def test_early_strip_disabled_when_manage_false_or_no_strip() -> None:
+    spec = _base_spec()
+    spec["identityStrip"] = {"manageListenerPolicy": False}
+    spec["publicRoute"]["gatewayRef"] = {"name": "kgateway"}
+    gw = map_gateway("team-a", "gateway", spec)
+    assert plan_early_identity_strip(gw).phase == "Disabled"
+
+    gw_none = GatewayDesired(
+        key=GatewayKey(namespace="team-a", name="vmcp"),
+        image="img",
+        admin_token_secret_ref=SecretRef(name="t"),
+        master_password_secret_ref=SecretRef(name="p"),
+        public_route=RouteDesired(
+            hostname="vmcp.example.com",
+            gateway_ref=GatewayParentRef(name="kgateway"),
+            strip_client_identity_headers=False,
+        ),
+    )
+    assert plan_early_identity_strip(gw_none).phase == "Disabled"
+    assert "no identity strip" in plan_early_identity_strip(gw_none).message
+
+
+def test_early_strip_same_ns_and_skip_mixed_parents() -> None:
+    gw = GatewayDesired(
+        key=GatewayKey(namespace="team-a", name="vmcp"),
+        image="img",
+        admin_token_secret_ref=SecretRef(name="t"),
+        master_password_secret_ref=SecretRef(name="p"),
+        public_route=RouteDesired(
+            hostname="vmcp.example.com",
+            gateway_ref=GatewayParentRef(name="kgateway", section_name="https"),
+        ),
+        admin_route=RouteDesired(
+            hostname="admin.example.com",
+            gateway_ref=GatewayParentRef(
+                name="other", namespace="gateway-system", section_name="https"
+            ),
+            path="/admin",
+        ),
+    )
+    plan = plan_early_identity_strip(gw)
+    assert plan.phase == "Applied"
+    assert len(plan.objects) == 1
+    assert plan.objects[0]["metadata"]["name"] == "vmcp-identity-strip-kgateway-https"
+    assert "gateway-system/other#https" in plan.message
+
+
+def test_early_strip_cross_namespace_without_section() -> None:
+    gw = GatewayDesired(
+        key=GatewayKey(namespace="team-a", name="vmcp"),
+        image="img",
+        admin_token_secret_ref=SecretRef(name="t"),
+        master_password_secret_ref=SecretRef(name="p"),
+        public_route=RouteDesired(
+            hostname="vmcp.example.com",
+            gateway_ref=GatewayParentRef(name="kgateway", namespace="gateway-system"),
+        ),
+    )
+    plan = plan_early_identity_strip(gw)
+    assert plan.phase == "SkippedCrossNamespace"
+    assert "gateway-system/kgateway" in plan.message
+    assert "#" not in plan.message.split("kgateway")[-1]
+
+
+def test_listener_policy_name_sanitizes_section() -> None:
+    gw = GatewayDesired(
+        key=GatewayKey(namespace="team-a", name="vmcp"),
+        image="img",
+        admin_token_secret_ref=SecretRef(name="t"),
+        master_password_secret_ref=SecretRef(name="p"),
+        public_route=RouteDesired(
+            hostname="vmcp.example.com",
+            gateway_ref=GatewayParentRef(name="kgateway", section_name="HTTPS/443"),
+        ),
+    )
+    plan = plan_early_identity_strip(gw)
+    assert plan.objects[0]["metadata"]["name"] == "vmcp-identity-strip-kgateway-https-443"
+
+
+def test_listener_policy_name_collapses_repeated_separators() -> None:
+    gw = GatewayDesired(
+        key=GatewayKey(namespace="team-a", name="vmcp"),
+        image="img",
+        admin_token_secret_ref=SecretRef(name="t"),
+        master_password_secret_ref=SecretRef(name="p"),
+        public_route=RouteDesired(
+            hostname="vmcp.example.com",
+            gateway_ref=GatewayParentRef(name="kgateway", section_name="HTTPS/-443"),
+        ),
+    )
+    plan = plan_early_identity_strip(gw)
+    assert plan.objects[0]["metadata"]["name"] == "vmcp-identity-strip-kgateway-https-443"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_applies_listener_policy_with_owner() -> None:
+    from vmcp_operator.adapters.driven.k8s.ssa import InMemoryApplier, ServerSideApply
+    from vmcp_operator.adapters.driven.registry.engine import RegistryEngine
+    from vmcp_operator.adapters.driving.k8s.reconcile import GatewayReconcile
+    from vmcp_operator.adapters.driving.k8s.runtime import EmptySkillLoader
+    from vmcp_operator.domain.usecases.reconcile_artifacts import ReconcileGatewayArtifacts
+
+    gw = GatewayDesired(
+        key=GatewayKey(namespace="team-a", name="main"),
+        image="img",
+        admin_token_secret_ref=SecretRef(name="t"),
+        master_password_secret_ref=SecretRef(name="p"),
+        public_route=RouteDesired(
+            hostname="main.example.com",
+            gateway_ref=GatewayParentRef(name="kgateway", section_name="https"),
+        ),
+    )
+    applier = InMemoryApplier()
+    owner = {
+        "apiVersion": "vmcp.io/v1alpha1",
+        "kind": "VmcpGateway",
+        "metadata": {"name": "main", "namespace": "team-a", "uid": "gw"},
+    }
+    result = await GatewayReconcile(
+        artifacts=ReconcileGatewayArtifacts(
+            renderer=RegistryEngine(), skill_loader=EmptySkillLoader()
+        ),
+        manifests=RenderGatewayManifests(),
+        apply=ServerSideApply(applier=applier),
+    ).execute(gw, [], owner=owner)
+    assert result["listenerPolicy"] == "Applied"
+    policy = next(
+        item["body"] for item in (applier.applied or []) if item["body"]["kind"] == "ListenerPolicy"
+    )
+    assert policy["metadata"]["ownerReferences"][0]["uid"] == "gw"
+    assert policy["spec"]["targetRefs"][0] == {
+        "group": "gateway.networking.k8s.io",
+        "kind": "Gateway",
+        "name": "kgateway",
+        "sectionName": "https",
+    }

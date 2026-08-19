@@ -6,7 +6,7 @@ metadata:
   labels:
     vmcp.io/profile: resurche
 spec:
-  image: registry.example.com/ai/vmcp:1.2.0
+  image: registry.example.com/ai/vmcp:1.3.0
   adminTokenSecretRef:
     name: resurche-admin-tokens
   masterPasswordSecretRef:

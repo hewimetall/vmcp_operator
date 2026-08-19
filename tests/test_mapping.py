@@ -73,6 +73,7 @@ def test_map_authentik_auth_and_forward_identity() -> None:
     assert gateway.auth.authentik.forward_auth_secret_ref is not None
     assert gateway.auth.authentik.forward_auth_secret_ref.name == "main-forward-auth"
     assert ("mcp-admins", "mcp:admin") in gateway.auth.authentik.group_scopes
+    assert ("dayana", "mcp:use upstream:dayana") in gateway.auth.authentik.group_scopes
 
     mcp_doc = yaml.safe_load((samples / "mcp-internal.yaml").read_text())
     mcp = map_mcp(

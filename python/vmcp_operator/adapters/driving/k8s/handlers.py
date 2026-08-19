@@ -158,9 +158,14 @@ async def reconcile_gateway(
             reason="Applied",
             message=(
                 f"objects={result.get('objects', 0)} "
-                f"adminHopHeaderInjected={result.get('adminHopHeaderInjected', False)}"
+                f"adminHopHeaderInjected={result.get('adminHopHeaderInjected', False)} "
+                f"listenerPolicy={result.get('listenerPolicy', 'Disabled')}"
             ),
             ready=True,
+            listener_policy={
+                "phase": str(result.get("listenerPolicy") or "Disabled"),
+                "message": str(result.get("listenerPolicyMessage") or ""),
+            },
         )
 
 

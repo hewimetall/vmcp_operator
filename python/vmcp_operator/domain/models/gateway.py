@@ -56,12 +56,24 @@ class TasksDesired:
 class ProxyDesired:
     enabled: bool = False
     path: str = "/mcp-proxy"
+    # vmcp ≥1.3: encode /mcp-proxy tool results as GCF (independent of gql.gcf).
+    gcf: bool = False
 
 
 @dataclass(frozen=True, slots=True)
 class GqlDesired:
     max_complexity: int = 1000
     max_depth: int = 10
+    # vmcp ≥1.3: encode query_graphql tool text as GCF generic profile.
+    gcf: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class IdentityStripDesired:
+    """Pre-auth client header strip via kgateway ListenerPolicy (issue #8)."""
+
+    # When false, operator does not apply ListenerPolicy (bring-your-own).
+    manage_listener_policy: bool = True
 
 
 class AuthProvider(StrEnum):
@@ -134,6 +146,7 @@ class GatewayDesired:
     gql: GqlDesired = GqlDesired()
     auth: AuthDesired = AuthDesired()
     skill_refs: tuple[SkillRef, ...] = ()
+    identity_strip: IdentityStripDesired = IdentityStripDesired()
     # Override derived ``https://{publicRoute.hostname}`` in vmcp.toml.
     public_base_url: str | None = None
     generation: int = 1

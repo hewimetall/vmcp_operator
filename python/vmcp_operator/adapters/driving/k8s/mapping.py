@@ -15,6 +15,7 @@ from vmcp_operator.domain.models.gateway import (
     GatewayKey,
     GatewayParentRef,
     GqlDesired,
+    IdentityStripDesired,
     PersistenceDesired,
     ProxyDesired,
     RouteDesired,
@@ -48,6 +49,7 @@ def map_gateway(namespace: str, name: str, spec: dict[str, Any]) -> GatewayDesir
     tasks = spec.get("tasks") or {}
     proxy = spec.get("proxy") or {}
     gql = spec.get("gql") or {}
+    identity = spec.get("identityStrip") or {}
     public_base = spec.get("publicBaseUrl")
     return GatewayDesired(
         key=GatewayKey(namespace=namespace, name=name),
@@ -70,10 +72,15 @@ def map_gateway(namespace: str, name: str, spec: dict[str, Any]) -> GatewayDesir
         proxy=ProxyDesired(
             enabled=bool(proxy.get("enabled", False)),
             path=str(proxy.get("path", "/mcp-proxy")),
+            gcf=bool(proxy.get("gcf", False)),
         ),
         gql=GqlDesired(
             max_complexity=int(gql.get("maxComplexity", 1000)),
             max_depth=int(gql.get("maxDepth", 10)),
+            gcf=bool(gql.get("gcf", False)),
+        ),
+        identity_strip=IdentityStripDesired(
+            manage_listener_policy=bool(identity.get("manageListenerPolicy", True)),
         ),
         auth=_map_auth(spec.get("auth") or {}),
         skill_refs=tuple(_skill_ref(item) for item in spec.get("skillRefs") or ()),

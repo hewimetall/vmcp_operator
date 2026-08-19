@@ -8,6 +8,7 @@ Tracker: https://github.com/hewimetall/vmcp_operator/issues/8
 | Same-host admin (path on the public hostname) | `adminRoute.hostname` optional; `path` default `/admin` |
 | Two `RequestHeaderModifier` filters rejected by Gateway API | Merged into one filter (`remove` + `set` + `add`) |
 | `stripClientIdentityHeaders` on admin undoes Authentik login | Authentik identity headers not stripped when hop inject is on |
+| Pre-auth strip (before kgateway extAuth) | Same-namespace `ListenerPolicy` `earlyRequestHeaderModifier` |
 | Image upgrade without matching CRDs silently prunes new fields | Documented below and in the Helm chart README |
 | `phase` is not a liveness signal | Use `metadata.generation` vs `status.observedGeneration` |
 
@@ -41,17 +42,45 @@ that filter — doing so deletes the identity forward-auth just wrote
 (`missing X-authentik-username`). Client-forged hop headers are still
 overwritten by `set`.
 
-True pre-auth strip (defence in depth before extAuth) is a kgateway
-`ListenerPolicy` `earlyRequestHeaderModifier` on the shared Gateway — the
-operator does not own that listener.
+### Pre-auth strip (vmcp ADR 0001)
+
+The intended order is: strip client `X-authentik-*` and the hop header **before**
+Authentik/outpost re-inject identity, then set the hop secret on `/admin`.
+
+OSS kgateway can only do that with a `ListenerPolicy`
+`spec.default.httpSettings.earlyRequestHeaderModifier`. That CR:
+
+- must live in the **same namespace** as the parent `Gateway` (no
+  `targetRefs[].namespace`)
+- is **listener-scoped** (before route match) — `sectionName` is honoured when set
+- conflicts with any other ListenerPolicy that also sets `httpSettings` on the
+  same listener (kgateway keeps the oldest)
+
+When `stripClientIdentityHeaders` is true and
+`identityStrip.manageListenerPolicy` is true (the default), the operator applies
+an owned `{gateway}-identity-strip-{parent}[-{section}]` ListenerPolicy **if**
+the parent Gateway is in the VmcpGateway namespace. Cross-namespace parents
+(typical `gateway-system`) set `status.listenerPolicy.phase=SkippedCrossNamespace`
+and leave HTTPRoute behaviour unchanged so login still works.
+
+Colocate the Gateway with the VmcpGateway (omit `gatewayRef.namespace`, or set
+it to the tenant namespace) to get the early strip. Sample:
+`deploy/samples/gateway-authentik-colocated.yaml`.
+
+Bring-your-own: `spec.identityStrip.manageListenerPolicy: false` plus an
+attachment or a ListenerPolicy you manage in the Gateway namespace.
+
+Two VmcpGateways that share one listener and both emit `httpSettings` will
+race — only the first-created ListenerPolicy wins. Prefer one Gateway per
+tenant listener, or a single BYO policy.
 
 ## Upgrading image vs CRDs
 
 The operator image and the CRDs are separate artifacts. Applying a newer
 image with older CRDs does **not** error: the API server **prunes** unknown
 `spec` fields (`stripClientIdentityHeaders`, `manage`, `extraFilters`,
-`path`, …). The operator looks upgraded and silently ignores the new
-configuration.
+`path`, `identityStrip`, `gql.gcf`, …). The operator looks upgraded and
+silently ignores the new configuration.
 
 Always apply `charts/vmcp-operator/crds/` at the **same tag** as the image
 (`kubectl apply --server-side` before `helm upgrade --skip-crds`). See
@@ -67,3 +96,6 @@ Release images are published only on `v*` tags ([docs/release.md](release.md)).
 A live operator has caught up when `status.observedGeneration` equals
 `metadata.generation`. `kubectl get vmcpgateway` prints an `Observed` column
 for that field.
+
+`status.listenerPolicy.phase` reports early-strip attach:
+`Applied` / `SkippedCrossNamespace` / `Disabled`.

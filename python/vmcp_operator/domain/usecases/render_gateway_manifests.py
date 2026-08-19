@@ -74,7 +74,7 @@ class RenderGatewayManifests:
                     "vmcp.io/bundle-sha256": artifacts.bundle_sha256,
                     "vmcp.io/registry-sha256": artifacts.registry_sha256,
                     "vmcp.io/key-encoding": "slash-as-double-underscore",
-                    "vmcp.io/contract": "vmcp-v1.2",
+                    "vmcp.io/contract": "vmcp-v1.3",
                 },
             },
             "data": cm_data,
@@ -471,3 +471,126 @@ def flatten_configmap_key(path: str) -> str:
     if path != path.strip() or not path:
         raise ValueError("artifact path must be non-empty")
     return path.replace("/", "__")
+
+
+@dataclass(frozen=True, slots=True)
+class EarlyStripPlan:
+    """Whether to apply a same-namespace kgateway ListenerPolicy (issue #8)."""
+
+    objects: tuple[dict[str, Any], ...]
+    phase: str
+    message: str
+
+
+def plan_early_identity_strip(gateway: GatewayDesired) -> EarlyStripPlan:
+    """Pre-auth strip: ListenerPolicy earlyRequestHeaderModifier (kgateway OSS).
+
+    HTTPRoute RequestHeaderModifier runs *after* extAuth, so it cannot sanitize
+    client-forged identity headers before Authentik. kgateway's only OSS hook
+    before auth is ListenerPolicy on the parent Gateway. That CR must live in
+    the *same namespace* as the Gateway (no cross-namespace targetRef).
+    """
+    if not gateway.identity_strip.manage_listener_policy:
+        return EarlyStripPlan(
+            (),
+            "Disabled",
+            "identityStrip.manageListenerPolicy=false",
+        )
+    parents: list[GatewayParentRef] = []
+    seen: set[tuple[str, str | None, str | None]] = set()
+    for route in _strip_routes(gateway):
+        ref = route.gateway_ref
+        key = (ref.name, ref.namespace, ref.section_name)
+        if key in seen:
+            continue
+        seen.add(key)
+        parents.append(ref)
+    if not parents:
+        return EarlyStripPlan((), "Disabled", "no identity strip requested")
+
+    same_ns: list[GatewayParentRef] = []
+    cross: list[str] = []
+    for ref in parents:
+        parent_ns = ref.namespace or gateway.key.namespace
+        if parent_ns != gateway.key.namespace:
+            loc = f"{parent_ns}/{ref.name}"
+            if ref.section_name:
+                loc = f"{loc}#{ref.section_name}"
+            cross.append(loc)
+            continue
+        same_ns.append(ref)
+
+    objects = tuple(_listener_policy(gateway, ref) for ref in same_ns)
+    if objects:
+        names = ", ".join(obj["metadata"]["name"] for obj in objects)
+        message = f"applied {names}"
+        if cross:
+            message += f"; skipped cross-namespace Gateway {', '.join(cross)}"
+        return EarlyStripPlan(objects, "Applied", message)
+    return EarlyStripPlan(
+        (),
+        "SkippedCrossNamespace",
+        "ListenerPolicy must share the Gateway namespace "
+        f"({', '.join(cross)}); HTTPRoute strip still applies after extAuth",
+    )
+
+
+def _strip_routes(gateway: GatewayDesired) -> list[RouteDesired]:
+    routes = [gateway.public_route]
+    if gateway.admin_route is not None:
+        routes.append(gateway.admin_route)
+    return [route for route in routes if route.strip_client_identity_headers]
+
+
+def _listener_policy(gateway: GatewayDesired, parent: GatewayParentRef) -> dict[str, Any]:
+    name = gateway.key.name
+    ns = gateway.key.namespace
+    target: dict[str, str] = {
+        "group": "gateway.networking.k8s.io",
+        "kind": "Gateway",
+        "name": parent.name,
+    }
+    if parent.section_name:
+        target["sectionName"] = parent.section_name
+    return {
+        "apiVersion": "gateway.kgateway.dev/v1alpha1",
+        "kind": "ListenerPolicy",
+        "metadata": {
+            "name": _listener_policy_name(name, parent),
+            "namespace": ns,
+            "labels": {
+                "app.kubernetes.io/name": "vmcp",
+                "app.kubernetes.io/instance": name,
+                "vmcp.io/gateway": name,
+            },
+            "annotations": {"vmcp.io/identity-strip": "early"},
+        },
+        "spec": {
+            "targetRefs": [target],
+            "default": {
+                "httpSettings": {
+                    "earlyRequestHeaderModifier": {
+                        "remove": _identity_remove_headers(gateway),
+                    }
+                }
+            },
+        },
+    }
+
+
+def _listener_policy_name(gateway_name: str, parent: GatewayParentRef) -> str:
+    parts = [gateway_name, "identity-strip", parent.name]
+    if parent.section_name:
+        parts.append(parent.section_name)
+    raw = "-".join(parts).lower()
+    cleaned: list[str] = []
+    prev_dash = False
+    for char in raw:
+        ok = char.isalnum() or char == "-"
+        if ok and not (char == "-" and prev_dash):
+            cleaned.append(char)
+            prev_dash = char == "-"
+        elif not ok and not prev_dash:
+            cleaned.append("-")
+            prev_dash = True
+    return "".join(cleaned).strip("-")[:253]

@@ -16,6 +16,7 @@ def apply_status(
     reason: str | None = None,
     message: str | None = None,
     ready: bool | None = None,
+    listener_policy: Mapping[str, Any] | None = None,
 ) -> None:
     """Write top-level ``status`` fields accepted by the Vmcp* CRD schemas.
 
@@ -29,6 +30,8 @@ def apply_status(
         status["observedGeneration"] = int(generation)
     if artifact_sha256 is not None:
         status["artifactSha256"] = artifact_sha256
+    if listener_policy is not None:
+        status["listenerPolicy"] = dict(listener_policy)
 
     if ready is None:
         ready = phase in {"Applied", "Registered", "Finalized"}
