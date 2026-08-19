@@ -36,8 +36,14 @@ from vmcp_operator.domain.models.mcp import (
 
 
 def map_gateway(namespace: str, name: str, spec: dict[str, Any]) -> GatewayDesired:
-    public = spec["publicRoute"]
-    admin = spec.get("adminRoute")
+    public_raw = spec.get("publicRoute")
+    if not public_raw:
+        raise ValueError("publicRoute is required")
+    public = _route(public_raw, role="public")
+    admin_raw = spec.get("adminRoute")
+    admin = (
+        _route(admin_raw, role="admin", inherit_from=public) if admin_raw else None
+    )
     persistence = spec.get("persistence") or {}
     tasks = spec.get("tasks") or {}
     proxy = spec.get("proxy") or {}
@@ -50,8 +56,8 @@ def map_gateway(namespace: str, name: str, spec: dict[str, Any]) -> GatewayDesir
         master_password_secret_ref=_secret_ref(
             spec["masterPasswordSecretRef"], default_key="password"
         ),
-        public_route=_route(public, role="public"),
-        admin_route=_route(admin, role="admin") if admin else None,
+        public_route=public,
+        admin_route=admin,
         persistence=PersistenceDesired(
             size=str(persistence.get("size", "5Gi")),
             storage_class_name=persistence.get("storageClassName"),
@@ -202,9 +208,26 @@ def _secret_ref(raw: dict[str, Any], *, default_key: str = "token") -> SecretRef
     )
 
 
-def _route(raw: dict[str, Any], *, role: str) -> RouteDesired:
-    ref = raw["gatewayRef"]
-    annotations = tuple(sorted((str(k), str(v)) for k, v in (raw.get("annotations") or {}).items()))
+def _route(
+    raw: dict[str, Any],
+    *,
+    role: str,
+    inherit_from: RouteDesired | None = None,
+) -> RouteDesired:
+    """Map a public/admin route. Admin may omit hostname/gatewayRef (issue #8)."""
+    hostname = str(raw.get("hostname") or "").strip()
+    if not hostname:
+        if inherit_from is None:
+            raise ValueError(f"{role}Route.hostname is required")
+        hostname = inherit_from.hostname
+    gateway_ref = _parent_ref_from_raw(
+        raw.get("gatewayRef"),
+        field=f"{role}Route.gatewayRef",
+        inherit_from=None if inherit_from is None else inherit_from.gateway_ref,
+    )
+    annotations = tuple(
+        sorted((str(k), str(v)) for k, v in (raw.get("annotations") or {}).items())
+    )
     strip = bool(raw.get("stripClientIdentityHeaders", True))
     inject_raw = raw.get("injectForwardAuthHeader")
     inject: bool | None = None if inject_raw is None else bool(inject_raw)
@@ -217,18 +240,48 @@ def _route(raw: dict[str, Any], *, role: str) -> RouteDesired:
         if isinstance(item, dict)
     )
     return RouteDesired(
-        hostname=str(raw["hostname"]),
-        gateway_ref=GatewayParentRef(
-            name=str(ref["name"]),
-            namespace=ref.get("namespace"),
-            section_name=ref.get("sectionName"),
-        ),
+        hostname=hostname,
+        gateway_ref=gateway_ref,
         annotations=annotations,
         strip_client_identity_headers=strip,
         inject_forward_auth_header=inject,
         manage=bool(raw.get("manage", True)),
         extra_filters=extra,
+        path=_route_path(raw.get("path"), role=role),
     )
+
+
+def _parent_ref_from_raw(
+    raw: Any,
+    *,
+    field: str,
+    inherit_from: GatewayParentRef | None,
+) -> GatewayParentRef:
+    name = ""
+    namespace: str | None = None
+    section_name: str | None = None
+    if raw is not None and not hasattr(raw, "get"):
+        raise ValueError(f"{field} must be an object")
+    if raw:
+        name = str(raw.get("name") or "").strip()
+        ns = raw.get("namespace")
+        section = raw.get("sectionName")
+        namespace = str(ns) if ns else None
+        section_name = str(section) if section else None
+    if not name:
+        if inherit_from is None:
+            raise ValueError(f"{field}.name is required")
+        return inherit_from
+    return GatewayParentRef(name=name, namespace=namespace, section_name=section_name)
+
+
+def _route_path(raw: Any, *, role: str) -> str:
+    if raw is None or str(raw).strip() == "":
+        return "/admin" if role == "admin" else "/"
+    path = str(raw).strip()
+    if not path.startswith("/"):
+        raise ValueError(f"{role}Route.path must start with '/'")
+    return path
 
 
 def _skill_ref(raw: dict[str, Any]) -> SkillRef:

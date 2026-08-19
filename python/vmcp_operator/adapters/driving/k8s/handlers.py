@@ -96,7 +96,18 @@ async def reconcile_gateway(
             )
             return
 
-    gateway = map_gateway(namespace, name, spec)
+    try:
+        gateway = map_gateway(namespace, name, spec)
+    except (KeyError, TypeError, ValueError) as exc:
+        apply_status(
+            patch,
+            phase="Invalid",
+            generation=generation,
+            reason="InvalidSpec",
+            message=str(exc) or exc.__class__.__name__,
+            ready=False,
+        )
+        return
     runtime = get_runtime()
     deleting = bool(meta.get("deletionTimestamp"))
     finalizers = tuple(meta.get("finalizers") or [])
@@ -180,7 +191,18 @@ async def reconcile_mcp(
             )
             return
 
-    mcp = map_mcp(namespace, name, spec)
+    try:
+        mcp = map_mcp(namespace, name, spec)
+    except (KeyError, TypeError, ValueError) as exc:
+        apply_status(
+            patch,
+            phase="Invalid",
+            generation=generation,
+            reason="InvalidSpec",
+            message=str(exc) or exc.__class__.__name__,
+            ready=False,
+        )
+        return
     runtime = get_runtime()
     deleting = bool(meta.get("deletionTimestamp"))
     finalizers = tuple(meta.get("finalizers") or [])

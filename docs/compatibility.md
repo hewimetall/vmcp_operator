@@ -16,7 +16,8 @@
 | Admin auth `none` \| `basic` \| `authentik` | `spec.auth.admin` |
 | Hop trust (`trusted_proxies` / hop secret) | `spec.auth.authentik.trustedProxies` + `forwardAuthSecretRef` |
 | Public edge strip of client Authentik/hop headers | `publicRoute.stripClientIdentityHeaders` (default true) → HTTPRoute `RequestHeaderModifier.remove` |
-| Admin edge strip + hop header inject | admin route strips the same identity headers; `injectForwardAuthHeader` (default when SecretRef set) → `RequestHeaderModifier.set` |
+| Admin hop inject + same-host path | `adminRoute` inherits public hostname/`gatewayRef` when omitted; `path` default `/admin`; hop `set` merged into the same `RequestHeaderModifier` |
+| Admin strip vs forward-auth | When hop inject is on, Authentik identity headers are kept (HTTPRoute RHM runs after kgateway extAuth) |
 | `enableServiceLinks: false` on Gateway pods | always (avoids `VMCP_PORT=tcp://…` when Gateway is named `vmcp`) |
 | `public_base_url` override | `spec.publicBaseUrl` (else `https://{publicRoute.hostname}`) |
 | BYO HTTPRoute | `publicRoute.manage` / `adminRoute.manage: false`; optional `extraFilters` |
@@ -25,7 +26,7 @@
 | Admin tokens + master password | Secret mounts / `VMCP_AUTH__MASTER_PASSWORD_ARGON2` |
 | Writable admin tokens (Token CRUD) | `adminTokenSecretRef.writable: true` → `/state/tokens.json` (seed once) |
 | Upstream bearer `${ENV}` | `source.bearerSecretRef` → pod env |
-| CR status / GC | top-level `status.phase` (+ `artifactSha256`); finalizers; child `ownerReferences` |
+| CR status / GC | top-level `status.phase` + `observedGeneration` (+ `artifactSha256`); finalizers; child `ownerReferences` |
 
 ## Secrets
 
@@ -39,6 +40,7 @@ When `forwardAuth: true`, set `trustedProxies` and/or `forwardAuthSecretRef` (vm
 
 - Local OAuth: `deploy/samples/gateway.yaml`
 - Authentik + hop trust: `deploy/samples/gateway-authentik.yaml`
+- Authentik same-host `/admin`: `deploy/samples/gateway-authentik-same-host.yaml`
 - External SaaS upstream: `deploy/samples/mcp-server.yaml` (`forwardIdentity: false`)
 - Internal adapter: `deploy/samples/mcp-internal.yaml` (`forwardIdentity: true`)
 - Peer via vmcp-proxy: `deploy/samples/mcp-vmcp-proxy.yaml`

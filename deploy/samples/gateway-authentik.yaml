@@ -28,7 +28,12 @@ spec:
       name: kgateway
       namespace: gateway-system
       sectionName: https
-    # Default true — same identity-header strip as public.
+    # Same-host alternative: omit hostname + gatewayRef to attach /admin on
+    # publicRoute.hostname (Gateway API longest-prefix vs public `/`).
+    # path: /admin
+    # Default true — merged into the same RequestHeaderModifier as hop inject.
+    # Authentik identity headers are kept when inject is on (HTTPRoute RHM
+    # runs after kgateway extAuth; stripping them breaks login — issue #8).
     stripClientIdentityHeaders: true
     # Default true when forwardAuthSecretRef is set — inject hop header at edge.
     injectForwardAuthHeader: true

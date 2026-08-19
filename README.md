@@ -78,3 +78,6 @@ peer Gateways via `VmcpProxy` / vmcp-proxy):
 C4 delta for issue #4 (status / finalizers / ownership) — import into
 architect-c4 workspace [`ws-vmcp-operator`](https://architecture.runmcp.ru/view/ws-vmcp-operator):
 [docs/architecture-issue4.md](docs/architecture-issue4.md).
+
+0.0.2 adoption (adminRoute same-host path, CRD/image skew, observedGeneration):
+[docs/issue-8-adoption.md](docs/issue-8-adoption.md).

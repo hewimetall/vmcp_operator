@@ -58,6 +58,7 @@ def _ak_gateway() -> GatewayDesired:
             hostname="admin.example.com",
             gateway_ref=GatewayParentRef(name="kgateway"),
             inject_forward_auth_header=True,
+            path="/admin",
         ),
         auth=AuthDesired(
             provider=AuthProvider.AUTHENTIK,
@@ -91,11 +92,13 @@ def test_gap2_admin_route_sets_hop_header_when_value_provided() -> None:
     )
     admin = next(m for m in manifests if m["metadata"]["name"] == "vmcp-admin")
     filters = admin["spec"]["rules"][0]["filters"]
-    # remove (strip) then set (hop inject)
-    removed = {h.lower() for h in filters[0]["requestHeaderModifier"]["remove"]}
-    for header in PUBLIC_STRIP_IDENTITY_HEADERS:
-        assert header.lower() in removed
-    assert filters[1]["requestHeaderModifier"]["set"] == [
+    # One RequestHeaderModifier: hop set; Authentik identity not stripped
+    # (HTTPRoute RHM runs after kgateway extAuth — issue #8).
+    assert len(filters) == 1
+    rhm = filters[0]["requestHeaderModifier"]
+    removed = {h.lower() for h in rhm.get("remove", [])}
+    assert "x-authentik-username" not in removed
+    assert rhm["set"] == [
         {"name": "X-Vmcp-Forward-Auth", "value": "s3cr3t"}
     ]
 
@@ -105,8 +108,11 @@ def test_gap2_admin_omits_set_without_secret_value() -> None:
     admin = next(m for m in manifests if m["metadata"]["name"] == "vmcp-admin")
     filters = admin["spec"]["rules"][0]["filters"]
     assert len(filters) == 1
-    assert "remove" in filters[0]["requestHeaderModifier"]
-    assert "set" not in filters[0]["requestHeaderModifier"]
+    rhm = filters[0]["requestHeaderModifier"]
+    assert "set" not in rhm
+    removed = {h.lower() for h in rhm["remove"]}
+    assert "x-vmcp-forward-auth" in removed
+    assert "x-authentik-username" not in removed
 
 
 def test_gap3_enable_service_links_false() -> None:

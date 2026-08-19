@@ -204,7 +204,9 @@ class RenderGatewayManifests:
         manifests: list[dict[str, Any]] = [pvc, configmap, service, deployment]
         if gateway.public_route.manage:
             public_rule: dict[str, Any] = {
-                "matches": [{"path": {"type": "PathPrefix", "value": "/"}}],
+                "matches": [
+                    {"path": {"type": "PathPrefix", "value": gateway.public_route.path}}
+                ],
                 "backendRefs": [{"name": name, "port": 8080}],
             }
             public_filters = _route_filters(
@@ -234,7 +236,9 @@ class RenderGatewayManifests:
             manifests.append(public_route)
         if gateway.admin_route is not None and gateway.admin_route.manage:
             admin_rule: dict[str, Any] = {
-                "matches": [{"path": {"type": "PathPrefix", "value": "/admin"}}],
+                "matches": [
+                    {"path": {"type": "PathPrefix", "value": gateway.admin_route.path}}
+                ],
                 "backendRefs": [{"name": name, "port": 8080}],
             }
             admin_filters = _route_filters(
@@ -283,6 +287,84 @@ def _identity_remove_headers(gateway: GatewayDesired) -> list[str]:
     return remove
 
 
+def _wants_hop_inject(route: RouteDesired, gateway: GatewayDesired) -> bool:
+    want = route.inject_forward_auth_header
+    if want is None:
+        return gateway.auth.authentik.forward_auth_secret_ref is not None
+    return want
+
+
+def _is_forward_auth_identity_header(gateway: GatewayDesired, header: str) -> bool:
+    """Headers Authentik forward-auth (re)writes after HTTPRoute RHM in kgateway."""
+    key = header.lower()
+    if key.startswith("x-authentik-"):
+        return True
+    ak = gateway.auth.authentik
+    return key in {ak.username_header.lower(), ak.groups_header.lower()}
+
+
+def _strip_headers_for_route(
+    gateway: GatewayDesired,
+    route: RouteDesired,
+    *,
+    inject: bool,
+    hop_header: str | None,
+) -> list[str]:
+    if not route.strip_client_identity_headers:
+        return []
+    headers = _identity_remove_headers(gateway)
+    if inject and _wants_hop_inject(route, gateway):
+        # HTTPRoute RequestHeaderModifier runs *after* kgateway extAuth
+        # (issue #8). Stripping Authentik identity here undoes forward-auth.
+        headers = [h for h in headers if not _is_forward_auth_identity_header(gateway, h)]
+        if hop_header:
+            hop = hop_header.lower()
+            headers = [h for h in headers if h.lower() != hop]
+    return headers
+
+
+def _merge_request_header_modifier(
+    remove: list[str],
+    set_headers: list[dict[str, str]],
+    add_headers: list[dict[str, str]],
+) -> dict[str, Any] | None:
+    """Gateway API allows at most one RequestHeaderModifier per HTTPRoute rule."""
+    body: dict[str, Any] = {}
+    if remove:
+        body["remove"] = _dedupe_header_names(remove)
+    if set_headers:
+        body["set"] = _dedupe_named_headers(set_headers)
+    if add_headers:
+        body["add"] = _dedupe_named_headers(add_headers)
+    if not body:
+        return None
+    return {"type": "RequestHeaderModifier", "requestHeaderModifier": body}
+
+
+def _dedupe_header_names(names: list[str]) -> list[str]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for name in names:
+        key = name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(name)
+    return out
+
+
+def _dedupe_named_headers(items: list[dict[str, str]]) -> list[dict[str, str]]:
+    by_name: dict[str, dict[str, str]] = {}
+    order: list[str] = []
+    for item in items:
+        name = str(item.get("name", ""))
+        key = name.lower()
+        if key not in by_name:
+            order.append(key)
+        by_name[key] = dict(item)
+    return [by_name[key] for key in order]
+
+
 def _route_filters(
     gateway: GatewayDesired,
     *,
@@ -290,31 +372,35 @@ def _route_filters(
     forward_auth_header_value: str | None,
     inject: bool,
 ) -> list[dict[str, Any]]:
-    filters: list[dict[str, Any]] = []
-    if route.strip_client_identity_headers:
-        filters.append(
-            {
-                "type": "RequestHeaderModifier",
-                "requestHeaderModifier": {"remove": _identity_remove_headers(gateway)},
-            }
-        )
-    if inject:
-        want = route.inject_forward_auth_header
-        secret_ref = gateway.auth.authentik.forward_auth_secret_ref
-        if want is None:
-            want = secret_ref is not None
-        if want and forward_auth_header_value:
-            header = gateway.auth.authentik.forward_auth_secret_header or "x-vmcp-forward-auth"
-            filters.append(
-                {
-                    "type": "RequestHeaderModifier",
-                    "requestHeaderModifier": {
-                        "set": [{"name": header, "value": forward_auth_header_value}],
-                    },
-                }
-            )
+    hop_header: str | None = None
+    set_headers: list[dict[str, str]] = []
+    add_headers: list[dict[str, str]] = []
+    extra_filters: list[dict[str, Any]] = []
+    if inject and _wants_hop_inject(route, gateway) and forward_auth_header_value:
+        hop_header = gateway.auth.authentik.forward_auth_secret_header or "x-vmcp-forward-auth"
+        set_headers.append({"name": hop_header, "value": forward_auth_header_value})
+    remove = _strip_headers_for_route(
+        gateway, route, inject=inject, hop_header=hop_header
+    )
     for extra in route.extra_filters:
-        filters.append(dict(extra))
+        copied = dict(extra)
+        if copied.get("type") == "RequestHeaderModifier":
+            inner = copied.get("requestHeaderModifier")
+            rhm = inner if isinstance(inner, dict) else {}
+            remove.extend(str(h) for h in (rhm.get("remove") or ()))
+            set_headers.extend(
+                dict(item) for item in (rhm.get("set") or ()) if isinstance(item, dict)
+            )
+            add_headers.extend(
+                dict(item) for item in (rhm.get("add") or ()) if isinstance(item, dict)
+            )
+            continue
+        extra_filters.append(copied)
+    filters: list[dict[str, Any]] = []
+    merged = _merge_request_header_modifier(remove, set_headers, add_headers)
+    if merged is not None:
+        filters.append(merged)
+    filters.extend(extra_filters)
     return filters
 
 

@@ -81,6 +81,9 @@ def test_crd_files_present_for_server_side_apply_upgrade() -> None:
     assert "extraFilters:" in gateway
     assert "attachments:" in gateway
     assert "manage:" in gateway
+    assert "path:" in gateway
+    assert "observedGeneration" in gateway
+    assert "jsonPath: .status.observedGeneration" in gateway
 
 
 def test_values_schema_enforces_required_install_params() -> None:

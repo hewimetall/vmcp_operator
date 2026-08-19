@@ -25,6 +25,9 @@ spec:
         - name: Phase
           type: string
           jsonPath: .status.phase
+        - name: Observed
+          type: integer
+          jsonPath: .status.observedGeneration
         - name: Age
           type: date
           jsonPath: .metadata.creationTimestamp
@@ -134,15 +137,34 @@ spec:
                         x-kubernetes-preserve-unknown-fields: true
                 adminRoute:
                   type: object
-                  description: Optional distinct hostname exposing only /admin.
+                  description: >
+                    Optional admin HTTPRoute. Omit hostname to share
+                    publicRoute.hostname and expose only `path` (default
+                    `/admin`) — same-host admin. A distinct hostname is
+                    still supported. Omit gatewayRef to inherit
+                    publicRoute.gatewayRef.
                   properties:
                     hostname:
                       type: string
+                      description: >
+                        Distinct admin hostname. When omitted or empty, uses
+                        publicRoute.hostname (path-based admin on the public
+                        host).
+                    path:
+                      type: string
+                      default: /admin
+                      description: >
+                        HTTPRoute PathPrefix for this admin route (Gateway API
+                        longest-match vs public `/`).
                     gatewayRef:
                       type: object
+                      required: [name]
+                      description: >
+                        Parent Gateway. When omitted, uses publicRoute.gatewayRef.
                       properties:
                         name:
                           type: string
+                          minLength: 1
                         namespace:
                           type: string
                         sectionName:
@@ -155,8 +177,14 @@ spec:
                       type: boolean
                       default: true
                       description: >
-                        Same identity-header strip as the public route (defence in
-                        depth for /admin).
+                        Same identity-header strip as the public route, merged
+                        into a single RequestHeaderModifier with hop inject
+                        (Gateway API allows one of that type per rule). When
+                        injectForwardAuthHeader is also on, Authentik identity
+                        headers are *not* removed here: HTTPRoute filters run
+                        after kgateway extAuth, so stripping them undoes
+                        forward-auth login (issue #8). Pre-auth strip belongs
+                        on a kgateway ListenerPolicy earlyRequestHeaderModifier.
                     injectForwardAuthHeader:
                       type: boolean
                       description: >

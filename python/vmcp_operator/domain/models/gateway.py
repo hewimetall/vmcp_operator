@@ -35,6 +35,8 @@ class RouteDesired:
     manage: bool = True
     # Extra Gateway API HTTPRouteFilter objects merged after built-in strip/inject.
     extra_filters: tuple[dict[str, Any], ...] = ()
+    # HTTPRoute PathPrefix. Admin defaults to /admin; public defaults to /.
+    path: str = "/"
 
 
 @dataclass(frozen=True, slots=True)

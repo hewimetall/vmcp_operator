@@ -1,0 +1,55 @@
+# Same-host admin: one hostname, /admin is a distinct HTTPRoute.
+#
+# public  PathPrefix /       — identity headers stripped
+# admin   PathPrefix /admin  — hop header injected; Authentik headers kept
+#                             so kgateway extAuth (TrafficPolicy) can set them
+apiVersion: vmcp.io/v1alpha1
+kind: VmcpGateway
+metadata:
+  name: main-shared-host
+  namespace: team-a
+spec:
+  image: registry.example.com/ai/vmcp:1.2.0
+  adminTokenSecretRef:
+    name: main-admin-tokens
+  masterPasswordSecretRef:
+    name: main-admin-password
+    key: password
+  publicRoute:
+    hostname: vmcp.example.com
+    gatewayRef:
+      name: kgateway
+      namespace: gateway-system
+      sectionName: https
+    stripClientIdentityHeaders: true
+  adminRoute:
+    # hostname / gatewayRef inherited from publicRoute
+    path: /admin
+    injectForwardAuthHeader: true
+    stripClientIdentityHeaders: true
+  attachments:
+    - apiVersion: gateway.kgateway.dev/v1alpha1
+      kind: TrafficPolicy
+      metadata:
+        name: main-shared-host-admin-extauth
+      spec:
+        targetRefs:
+          - group: gateway.networking.k8s.io
+            kind: HTTPRoute
+            name: main-shared-host-admin
+  auth:
+    enabled: true
+    provider: authentik
+    admin:
+      mode: authentik
+      requiredGroups:
+        - mcp-admins
+    authentik:
+      issuer: https://auth.example.com/application/o/mcp-internal/
+      jwksUrl: https://auth.example.com/application/o/mcp-internal/jwks/
+      forwardAuth: true
+      trustedProxies:
+        - 10.244.0.0/16
+      forwardAuthSecretRef:
+        name: main-forward-auth
+        key: secret

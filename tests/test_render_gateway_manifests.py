@@ -34,6 +34,7 @@ def test_render_gateway_manifests_no_subpath_and_admin_route() -> None:
         admin_route=RouteDesired(
             hostname="admin-main.example.com",
             gateway_ref=GatewayParentRef(name="kgateway"),
+            path="/admin",
         ),
         persistence=PersistenceDesired(
             size="8Gi",
