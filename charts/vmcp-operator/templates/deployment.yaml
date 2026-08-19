@@ -31,6 +31,28 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - --watch-namespaces={{ include "vmcp-operator.watchNamespaces" . }}
+            - --liveness=http://0.0.0.0:8081/healthz
+          ports:
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+            {{- if .Values.dashboard.enabled }}
+            - name: dashboard
+              containerPort: {{ .Values.dashboard.port }}
+              protocol: TCP
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 5
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 2
+            periodSeconds: 10
           env:
             - name: PYTHON_LAZY_IMPORTS
               value: {{ .Values.operator.lazyImports | quote }}
@@ -51,12 +73,6 @@ spec:
               value: {{ .Values.dashboard.authSecretRef.usernameKey | quote }}
             - name: VMCP_OPERATOR_DASHBOARD_AUTH_PASSWORD_KEY
               value: {{ .Values.dashboard.authSecretRef.passwordKey | quote }}
-            {{- end }}
-          ports:
-            {{- if .Values.dashboard.enabled }}
-            - name: dashboard
-              containerPort: {{ .Values.dashboard.port }}
-              protocol: TCP
             {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}

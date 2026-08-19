@@ -1,0 +1,68 @@
+# Colocated parent Gateway: VmcpGateway and Gateway share namespace team-a.
+#
+# That is the only layout where the operator can apply a kgateway
+# ListenerPolicy earlyRequestHeaderModifier (policy and Gateway must be
+# same-namespace). Order matches vmcp ADR 0001:
+#   1. ListenerPolicy strips client X-authentik-* and hop header (before extAuth)
+#   2. TrafficPolicy / Authentik re-injects identity on /admin
+#   3. admin HTTPRoute sets the hop secret (after extAuth)
+#
+# Create a Gateway in team-a (or omit gatewayRef.namespace) before applying this.
+apiVersion: vmcp.io/v1alpha1
+kind: VmcpGateway
+metadata:
+  name: main-colocated
+  namespace: team-a
+spec:
+  image: registry.example.com/ai/vmcp:1.3.0
+  adminTokenSecretRef:
+    name: main-admin-tokens
+  masterPasswordSecretRef:
+    name: main-admin-password
+    key: password
+  publicRoute:
+    hostname: vmcp.example.com
+    gatewayRef:
+      name: kgateway
+      sectionName: https
+    stripClientIdentityHeaders: true
+  adminRoute:
+    path: /admin
+    injectForwardAuthHeader: true
+    stripClientIdentityHeaders: true
+  # identityStrip:
+  #   manageListenerPolicy: false   # BYO ListenerPolicy in this namespace
+  gql:
+    gcf: false
+  proxy:
+    enabled: false
+    gcf: false
+  attachments:
+    - apiVersion: gateway.kgateway.dev/v1alpha1
+      kind: TrafficPolicy
+      metadata:
+        name: main-colocated-admin-extauth
+      spec:
+        targetRefs:
+          - group: gateway.networking.k8s.io
+            kind: HTTPRoute
+            name: main-colocated-admin
+  auth:
+    enabled: true
+    provider: authentik
+    admin:
+      mode: authentik
+      requiredGroups:
+        - mcp-admins
+    authentik:
+      issuer: https://auth.example.com/application/o/mcp-internal/
+      jwksUrl: https://auth.example.com/application/o/mcp-internal/jwks/
+      forwardAuth: true
+      trustedProxies:
+        - 10.244.0.0/16
+      forwardAuthSecretRef:
+        name: main-forward-auth
+        key: secret
+      groupScopes:
+        dayana: "mcp:use upstream:dayana"
+        mcp-admins: "mcp:admin"

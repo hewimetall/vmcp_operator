@@ -4,8 +4,8 @@ metadata:
   name: main
   namespace: team-a
 spec:
-  # Prefer a vmcp ≥1.2 image for AuthFacade + hop trust + forward_identity.
-  image: registry.example.com/ai/vmcp:1.2.0
+  # Prefer a vmcp ≥1.3 image (G25 catalog + optional GCF). ≥1.2 has AuthFacade.
+  image: registry.example.com/ai/vmcp:1.3.0
   adminTokenSecretRef:
     name: main-admin-tokens
   masterPasswordSecretRef:

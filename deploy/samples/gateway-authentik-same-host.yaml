@@ -1,0 +1,69 @@
+# Same-host admin + extra path routes (issue #8).
+#
+# public  PathPrefix /       — identity headers stripped (HTTPRoute, after auth)
+# admin   PathPrefix /admin  — hop header injected; Authentik headers kept
+# mcp     PathPrefix /mcp    — own TrafficPolicy via attachments (name: *-mcp)
+# api     PathPrefix /api/v1
+# health  PathPrefix /health — typically no extAuth
+# ready   PathPrefix /ready
+# Parent Gateway is in gateway-system → no ListenerPolicy (cross-namespace).
+apiVersion: vmcp.io/v1alpha1
+kind: VmcpGateway
+metadata:
+  name: main-shared-host
+  namespace: team-a
+spec:
+  image: registry.example.com/ai/vmcp:1.3.0
+  adminTokenSecretRef:
+    name: main-admin-tokens
+  masterPasswordSecretRef:
+    name: main-admin-password
+    key: password
+  publicRoute:
+    hostname: vmcp.example.com
+    gatewayRef:
+      name: kgateway
+      namespace: gateway-system
+      sectionName: https
+    stripClientIdentityHeaders: true
+  adminRoute:
+    # hostname / gatewayRef inherited from publicRoute
+    path: /admin
+    injectForwardAuthHeader: true
+    stripClientIdentityHeaders: true
+  extraRoutes:
+    - name: mcp
+      path: /mcp
+    - name: api
+      path: /api/v1
+    - name: health
+      path: /health
+    - name: ready
+      path: /ready
+  attachments:
+    - apiVersion: gateway.kgateway.dev/v1alpha1
+      kind: TrafficPolicy
+      metadata:
+        name: main-shared-host-admin-extauth
+      spec:
+        targetRefs:
+          - group: gateway.networking.k8s.io
+            kind: HTTPRoute
+            name: main-shared-host-admin
+    # Target main-shared-host-mcp / -api with their own extAuth policies.
+  auth:
+    enabled: true
+    provider: authentik
+    admin:
+      mode: authentik
+      requiredGroups:
+        - mcp-admins
+    authentik:
+      issuer: https://auth.example.com/application/o/mcp-internal/
+      jwksUrl: https://auth.example.com/application/o/mcp-internal/jwks/
+      forwardAuth: true
+      trustedProxies:
+        - 10.244.0.0/16
+      forwardAuthSecretRef:
+        name: main-forward-auth
+        key: secret

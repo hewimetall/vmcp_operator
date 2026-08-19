@@ -60,6 +60,16 @@ export KUBECONFIG=/tmp/kwok.kubeconfig
 # Phase 5 acceptance (multi-gateway isolation, reconnect, delete, dashboard):
 .venv/bin/python scripts/phase5_kwok_e2e.py
 # Also covered in-memory by tests/test_phase5_e2e.py in CI.
+
+# Live operator (this VM): KWOK binary runtime + helm chart + local process.
+# Pods stay Pending (no kubelet). API objects — HTTPRoute, ListenerPolicy, status — are real.
+# kwokctl create cluster --name vmcp-live --runtime binary --wait 60s
+# kubectl apply --server-side -f charts/vmcp-operator/crds/
+# helm upgrade -i vmcp-operator ./charts/vmcp-operator -n vmcp-system --create-namespace \
+#   --skip-crds --set dashboard.enabled=false \
+#   --set 'watchNamespaces={team-a}' --set 'policy.allowedImagePrefixes={registry.example.com/ai}'
+# KUBECONFIG=… PYTHON_LAZY_IMPORTS=normal .venv/bin/python -m vmcp_operator --standalone
+
 ```
 
 Kind/k3s full kubelet e2e remains environment-dependent (nested cgroup v2 must

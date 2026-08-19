@@ -34,6 +34,7 @@ def test_render_gateway_manifests_no_subpath_and_admin_route() -> None:
         admin_route=RouteDesired(
             hostname="admin-main.example.com",
             gateway_ref=GatewayParentRef(name="kgateway"),
+            path="/admin",
         ),
         persistence=PersistenceDesired(
             size="8Gi",
@@ -86,7 +87,7 @@ def test_render_gateway_manifests_no_subpath_and_admin_route() -> None:
     assert "registry.json" in cm["data"]
     assert "vmcp.toml" in cm["data"]
     assert 'provider = "local"' in cm["data"]["vmcp.toml"]
-    assert cm["metadata"]["annotations"]["vmcp.io/contract"] == "vmcp-v1.2"
+    assert cm["metadata"]["annotations"]["vmcp.io/contract"] == "vmcp-v1.3"
     assert all("/" not in key for key in cm["data"])
     assert deploy["spec"]["template"]["spec"]["initContainers"][0]["name"] == "expand-artifacts"
     admin = next(m for m in manifests if m["metadata"]["name"] == "main-admin")

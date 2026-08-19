@@ -16,6 +16,7 @@ from vmcp_operator.adapters.driving.k8s.mapping import map_gateway, map_mcp
 from vmcp_operator.adapters.driving.k8s.runtime import get_runtime
 from vmcp_operator.adapters.driving.k8s.status_patch import apply_status, generation_of
 from vmcp_operator.domain.models.gateway import GatewayKey
+from vmcp_operator.domain.usecases.crd_compat import missing_vmcpgateway_crd_fields
 from vmcp_operator.domain.usecases.finalizers import (
     MCP_FINALIZER,
     plan_gateway_finalizer,
@@ -27,6 +28,9 @@ from vmcp_operator.domain.usecases.immutable import (
 )
 
 LOGGER = logging.getLogger(__name__)
+
+# Populated at startup from the live VmcpGateway CRD (empty = skip / match).
+CRD_SKEW: tuple[str, ...] = ()
 
 # Per-gateway serialization markers (in-process MVP, replicaCount=1).
 _GATEWAY_LOCKS: dict[tuple[int, str], Any] = {}
@@ -67,6 +71,45 @@ def _owner_body(
 async def configure(settings: kopf.OperatorSettings, **_: Any) -> None:
     settings.posting.enabled = True
     settings.watching.server_timeout = 60
+    global CRD_SKEW
+    CRD_SKEW = await _inspect_gateway_crd()
+    if CRD_SKEW:
+        LOGGER.error(
+            "VmcpGateway CRD is older than this operator; the API server will "
+            "silently prune: %s. Apply charts/vmcp-operator/crds/ at the same tag.",
+            ", ".join(CRD_SKEW),
+        )
+
+
+def _status(patch: Any, **kwargs: Any) -> None:
+    apply_status(patch, crd_skew=CRD_SKEW, **kwargs)
+
+
+async def _inspect_gateway_crd() -> tuple[str, ...]:
+    import os
+
+    if os.environ.get("VMCP_OPERATOR_SKIP_CRD_CHECK", "").lower() in {"1", "true", "yes"}:
+        return ()
+    try:
+        import kr8s
+        from kr8s.asyncio.objects import new_class
+
+        api = await kr8s.asyncio.api()
+        cls = new_class(
+            kind="CustomResourceDefinition",
+            version="apiextensions.k8s.io/v1",
+            plural="customresourcedefinitions",
+            namespaced=False,
+            asyncio=True,
+        )
+        obj = cls({"metadata": {"name": "vmcpgateways.vmcp.io"}}, api=api)
+        if not await obj.exists():
+            return ("<crd-missing>",)
+        await obj.refresh()
+        return missing_vmcpgateway_crd_fields(dict(obj.raw))
+    except Exception as exc:
+        LOGGER.warning("could not inspect VmcpGateway CRD: %s", exc)
+        return ()
 
 
 @kopf.on.create("vmcp.io", "v1alpha1", "vmcpgateways")
@@ -86,7 +129,7 @@ async def reconcile_gateway(
     if old and "spec" in old:
         violations = check_gateway_immutables(old["spec"], spec)
         if violations:
-            apply_status(
+            _status(
                 patch,
                 phase="Invalid",
                 generation=generation,
@@ -96,7 +139,18 @@ async def reconcile_gateway(
             )
             return
 
-    gateway = map_gateway(namespace, name, spec)
+    try:
+        gateway = map_gateway(namespace, name, spec)
+    except (KeyError, TypeError, ValueError) as exc:
+        _status(
+            patch,
+            phase="Invalid",
+            generation=generation,
+            reason="InvalidSpec",
+            message=str(exc) or exc.__class__.__name__,
+            ready=False,
+        )
+        return
     runtime = get_runtime()
     deleting = bool(meta.get("deletionTimestamp"))
     finalizers = tuple(meta.get("finalizers") or [])
@@ -116,7 +170,7 @@ async def reconcile_gateway(
             children_remaining=len(mcps) if deleting else 0,
         )
         if decision.block_delete:
-            apply_status(
+            _status(
                 patch,
                 phase="Deleting",
                 generation=generation,
@@ -127,7 +181,7 @@ async def reconcile_gateway(
             return
         if deleting and decision.remove:
             schedule_finalizer_removes(patch, decision.remove)
-            apply_status(
+            _status(
                 patch,
                 phase="Finalized",
                 generation=generation,
@@ -139,7 +193,7 @@ async def reconcile_gateway(
         result = await runtime.gateway_reconcile.execute(gateway, mcps, owner=owner)
         if decision.add:
             schedule_finalizer_adds(patch, decision.add)
-        apply_status(
+        _status(
             patch,
             phase=str(result.get("phase", "Applied")),
             generation=generation,
@@ -147,9 +201,14 @@ async def reconcile_gateway(
             reason="Applied",
             message=(
                 f"objects={result.get('objects', 0)} "
-                f"adminHopHeaderInjected={result.get('adminHopHeaderInjected', False)}"
+                f"adminHopHeaderInjected={result.get('adminHopHeaderInjected', False)} "
+                f"listenerPolicy={result.get('listenerPolicy', 'Disabled')}"
             ),
             ready=True,
+            listener_policy={
+                "phase": str(result.get("listenerPolicy") or "Disabled"),
+                "message": str(result.get("listenerPolicyMessage") or ""),
+            },
         )
 
 
@@ -170,7 +229,7 @@ async def reconcile_mcp(
     if old and "spec" in old:
         violations = check_mcp_immutables(old["spec"], spec)
         if violations:
-            apply_status(
+            _status(
                 patch,
                 phase="Invalid",
                 generation=generation,
@@ -180,7 +239,18 @@ async def reconcile_mcp(
             )
             return
 
-    mcp = map_mcp(namespace, name, spec)
+    try:
+        mcp = map_mcp(namespace, name, spec)
+    except (KeyError, TypeError, ValueError) as exc:
+        _status(
+            patch,
+            phase="Invalid",
+            generation=generation,
+            reason="InvalidSpec",
+            message=str(exc) or exc.__class__.__name__,
+            ready=False,
+        )
+        return
     runtime = get_runtime()
     deleting = bool(meta.get("deletionTimestamp"))
     finalizers = tuple(meta.get("finalizers") or [])
@@ -210,7 +280,7 @@ async def reconcile_mcp(
             unregistered_from_vmcp=unregistered,
         )
         if decision.block_delete:
-            apply_status(
+            _status(
                 patch,
                 phase="Deleting",
                 generation=generation,
@@ -222,7 +292,7 @@ async def reconcile_mcp(
         if deleting and decision.remove:
             schedule_finalizer_removes(patch, decision.remove)
             await runtime.touch_gateway(mcp.gateway_key)
-            apply_status(
+            _status(
                 patch,
                 phase="Finalized",
                 generation=generation,
@@ -235,7 +305,7 @@ async def reconcile_mcp(
             adds = decision.add if decision.add else (MCP_FINALIZER,)
             schedule_finalizer_adds(patch, adds)
             await runtime.touch_gateway(mcp.gateway_key)
-            apply_status(
+            _status(
                 patch,
                 phase="PendingGateway",
                 generation=generation,
@@ -252,7 +322,7 @@ async def reconcile_mcp(
         if decision.add:
             schedule_finalizer_adds(patch, decision.add)
         await runtime.touch_gateway(mcp.gateway_key)
-        apply_status(
+        _status(
             patch,
             phase=str(mcp_result.get("phase", "Applied")),
             generation=generation,

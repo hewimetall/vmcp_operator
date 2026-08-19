@@ -29,6 +29,11 @@ def test_helm_lint_and_template_operator_only() -> None:
     # Chart must never template a bare vmcp application Deployment.
     assert "name: vmcp\n" not in rendered
     assert "containerPort: 8080" in rendered
+    assert "containerPort: 8081" in rendered
+    assert "--liveness=http://0.0.0.0:8081/healthz" in rendered
+    assert "livenessProbe:" in rendered
+    assert "readinessProbe:" in rendered
+    assert "customresourcedefinitions" in rendered
 
 
 def test_helm_fails_without_watch_namespaces_or_replicas() -> None:
@@ -81,6 +86,15 @@ def test_crd_files_present_for_server_side_apply_upgrade() -> None:
     assert "extraFilters:" in gateway
     assert "attachments:" in gateway
     assert "manage:" in gateway
+    assert "path:" in gateway
+    assert "identityStrip:" in gateway
+    assert "crdSkew:" in gateway
+    assert "extraRoutes:" in gateway
+    assert "manageListenerPolicy:" in gateway
+    assert "listenerPolicy:" in gateway
+    assert "gcf:" in gateway
+    assert "observedGeneration" in gateway
+    assert "jsonPath: .status.observedGeneration" in gateway
 
 
 def test_values_schema_enforces_required_install_params() -> None:
@@ -88,3 +102,18 @@ def test_values_schema_enforces_required_install_params() -> None:
     assert '"watchNamespaces"' in schema
     assert '"allowedImagePrefixes"' in schema
     assert '"const": 1' in schema
+
+
+def test_role_includes_kgateway_listenerpolicies() -> None:
+    rendered = _run(
+        [
+            "helm",
+            "template",
+            "test",
+            str(CHART),
+            "--namespace",
+            "vmcp-system",
+        ]
+    ).stdout
+    assert "listenerpolicies" in rendered
+    assert "gateway.kgateway.dev" in rendered

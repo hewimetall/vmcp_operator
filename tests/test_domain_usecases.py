@@ -76,6 +76,7 @@ def _gateway(name: str = "main", ns: str = "team-a") -> GatewayDesired:
         admin_route=RouteDesired(
             hostname=f"admin-{name}.example.com",
             gateway_ref=GatewayParentRef(name="kgateway"),
+            path="/admin",
         ),
     )
 

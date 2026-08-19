@@ -68,7 +68,8 @@ free-threaded CPython 3.15t image builds do not need `UV_OVERRIDE`.
 
 Phase −1 compatibility results: [docs/phase-minus-one.md](docs/phase-minus-one.md).
 
-Gateway contract (vmcp **≥1.2** AuthFacade / hop trust / `forward_identity`):
+Gateway contract (vmcp **≥1.3** recommended: G25 catalog + optional GCF;
+**≥1.2** AuthFacade / hop trust / `forward_identity`):
 [docs/compatibility.md](docs/compatibility.md).
 
 Operator control plane **above** vmcp (MCP add/remove/update + NL CRUD,
@@ -78,3 +79,6 @@ peer Gateways via `VmcpProxy` / vmcp-proxy):
 C4 delta for issue #4 (status / finalizers / ownership) — import into
 architect-c4 workspace [`ws-vmcp-operator`](https://architecture.runmcp.ru/view/ws-vmcp-operator):
 [docs/architecture-issue4.md](docs/architecture-issue4.md).
+
+0.0.2 adoption (adminRoute same-host path, CRD/image skew, observedGeneration):
+[docs/issue-8-adoption.md](docs/issue-8-adoption.md).

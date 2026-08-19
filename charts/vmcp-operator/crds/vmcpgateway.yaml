@@ -25,6 +25,9 @@ spec:
         - name: Phase
           type: string
           jsonPath: .status.phase
+        - name: Observed
+          type: integer
+          jsonPath: .status.observedGeneration
         - name: Age
           type: date
           jsonPath: .metadata.creationTimestamp
@@ -99,6 +102,13 @@ spec:
                     hostname:
                       type: string
                       minLength: 1
+                    path:
+                      type: string
+                      default: /
+                      description: >
+                        HTTPRoute PathPrefix (default `/`). More-specific
+                        adminRoute.path and extraRoutes[].path win via Gateway
+                        API longest-prefix match.
                     gatewayRef:
                       type: object
                       required: [name]
@@ -119,7 +129,9 @@ spec:
                       description: >
                         Defence in depth: HTTPRoute RequestHeaderModifier removes
                         client-supplied X-authentik-* and X-Vmcp-Forward-Auth on the
-                        public edge (issue #4 Gap 1).
+                        public edge (issue #4 Gap 1). When the parent Gateway is in
+                        the same namespace, the operator also applies a kgateway
+                        ListenerPolicy earlyRequestHeaderModifier (before extAuth).
                     manage:
                       type: boolean
                       default: true
@@ -134,15 +146,34 @@ spec:
                         x-kubernetes-preserve-unknown-fields: true
                 adminRoute:
                   type: object
-                  description: Optional distinct hostname exposing only /admin.
+                  description: >
+                    Optional admin HTTPRoute. Omit hostname to share
+                    publicRoute.hostname and expose only `path` (default
+                    `/admin`) — same-host admin. A distinct hostname is
+                    still supported. Omit gatewayRef to inherit
+                    publicRoute.gatewayRef.
                   properties:
                     hostname:
                       type: string
+                      description: >
+                        Distinct admin hostname. When omitted or empty, uses
+                        publicRoute.hostname (path-based admin on the public
+                        host).
+                    path:
+                      type: string
+                      default: /admin
+                      description: >
+                        HTTPRoute PathPrefix for this admin route (Gateway API
+                        longest-match vs public `/`).
                     gatewayRef:
                       type: object
+                      required: [name]
+                      description: >
+                        Parent Gateway. When omitted, uses publicRoute.gatewayRef.
                       properties:
                         name:
                           type: string
+                          minLength: 1
                         namespace:
                           type: string
                         sectionName:
@@ -155,8 +186,15 @@ spec:
                       type: boolean
                       default: true
                       description: >
-                        Same identity-header strip as the public route (defence in
-                        depth for /admin).
+                        Same identity-header strip as the public route, merged
+                        into a single RequestHeaderModifier with hop inject
+                        (Gateway API allows one of that type per rule). When
+                        injectForwardAuthHeader is also on, Authentik identity
+                        headers are *not* removed here: HTTPRoute filters run
+                        after kgateway extAuth, so stripping them undoes
+                        forward-auth login (issue #8). Pre-auth strip is a
+                        same-namespace kgateway ListenerPolicy
+                        earlyRequestHeaderModifier (see spec.identityStrip).
                     injectForwardAuthHeader:
                       type: boolean
                       description: >
@@ -175,6 +213,79 @@ spec:
                       items:
                         type: object
                         x-kubernetes-preserve-unknown-fields: true
+                extraRoutes:
+                  type: array
+                  description: >
+                    Additional HTTPRoutes on the public hostname (or a distinct
+                    hostname). Use for `/mcp`, `/api/v1`, `/health`, `/ready`
+                    when those paths need their own extAuth TrafficPolicy.
+                    Each item inherits omitted hostname/gatewayRef from
+                    publicRoute. HTTPRoute name is `{gateway}-{name}`.
+                  items:
+                    type: object
+                    required: [name, path]
+                    properties:
+                      name:
+                        type: string
+                        minLength: 1
+                        description: >
+                          DNS-1123 label. HTTPRoute metadata.name is
+                          `{gateway}-{name}`. Reserved: public, admin.
+                      path:
+                        type: string
+                        minLength: 1
+                        description: HTTPRoute PathPrefix (must start with `/`).
+                      hostname:
+                        type: string
+                        description: >
+                          When omitted, uses publicRoute.hostname.
+                      gatewayRef:
+                        type: object
+                        required: [name]
+                        description: >
+                          When omitted, uses publicRoute.gatewayRef.
+                        properties:
+                          name:
+                            type: string
+                            minLength: 1
+                          namespace:
+                            type: string
+                          sectionName:
+                            type: string
+                      annotations:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      stripClientIdentityHeaders:
+                        type: boolean
+                        default: true
+                      injectForwardAuthHeader:
+                        type: boolean
+                        default: false
+                      manage:
+                        type: boolean
+                        default: true
+                      extraFilters:
+                        type: array
+                        items:
+                          type: object
+                          x-kubernetes-preserve-unknown-fields: true
+                identityStrip:
+                  type: object
+                  description: >
+                    Pre-auth identity-header sanitization. kgateway OSS can only
+                    mutate headers before extAuth via ListenerPolicy, and that
+                    policy must live in the same namespace as the parent Gateway.
+                    Cross-namespace gatewayRef skips the ListenerPolicy
+                    (status.listenerPolicy=SkippedCrossNamespace) and keeps
+                    HTTPRoute strip after auth.
+                  properties:
+                    manageListenerPolicy:
+                      type: boolean
+                      default: true
+                      description: >
+                        When false, operator does not apply ListenerPolicy
+                        (bring-your-own earlyRequestHeaderModifier).
                 attachments:
                   type: array
                   description: >
@@ -204,6 +315,12 @@ spec:
                     maxDepth:
                       type: integer
                       default: 10
+                    gcf:
+                      type: boolean
+                      default: false
+                      description: >
+                        vmcp ≥1.3: encode query_graphql tool text as GCF generic
+                        profile instead of JSON. Ignored by vmcp 1.2 images.
                 proxy:
                   type: object
                   properties:
@@ -213,6 +330,12 @@ spec:
                     path:
                       type: string
                       default: /mcp-proxy
+                    gcf:
+                      type: boolean
+                      default: false
+                      description: >
+                        vmcp ≥1.3: encode /mcp-proxy tool results as GCF.
+                        Independent of gql.gcf. No-op unless proxy.enabled.
                 tasks:
                   type: object
                   properties:
@@ -280,7 +403,12 @@ spec:
                           type: object
                           additionalProperties:
                             type: string
-                          description: Exact Authentik group → space-separated MCP scopes.
+                          description: >
+                            Exact Authentik group → space-separated MCP scopes.
+                            vmcp ≥1.3 G25 catalog isolation: include
+                            `upstream:<name>` so GraphQL/tools/list hide other
+                            namespaces (e.g. `mcp:use upstream:dayana`).
+                            `mcp:admin` still sees the full catalogue.
                         trustedProxies:
                           type: array
                           items:
@@ -322,6 +450,24 @@ spec:
                   format: int64
                 artifactSha256:
                   type: string
+                crdSkew:
+                  type: array
+                  items:
+                    type: string
+                  description: >
+                    spec./status. paths this operator image expects but the
+                    installed VmcpGateway CRD schema lacks (silent prune).
+                listenerPolicy:
+                  type: object
+                  description: >
+                    Outcome of the optional same-namespace ListenerPolicy for
+                    pre-auth identity-header strip (Applied, SkippedCrossNamespace,
+                    Disabled).
+                  properties:
+                    phase:
+                      type: string
+                    message:
+                      type: string
                 conditions:
                   type: array
                   items:

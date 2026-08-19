@@ -29,12 +29,24 @@ helm upgrade -i vmcp-operator ./charts/vmcp-operator \
   --set 'watchNamespaces={team-a,team-b,shared}' \
   --set 'policy.allowedImagePrefixes={registry.example.com/ai}'
 
-# CRD upgrades: server-side apply before helm upgrade --skip-crds
+# CRD upgrades: ALWAYS apply charts/vmcp-operator/crds/ from the same tag as the
+# image *before* helm upgrade --skip-crds. Helm does not upgrade CRDs in place.
+# Installing a newer image with older CRDs is silent: the API server prunes every
+# new spec field (stripClientIdentityHeaders, manage, extraFilters, path, identityStrip, gql.gcf, …)
+# and the operator looks upgraded while ignoring the configuration.
 kubectl apply --server-side --force-conflicts \
   -f charts/vmcp-operator/crds/
 helm upgrade vmcp-operator ./charts/vmcp-operator \
   --namespace vmcp-system --skip-crds
 ```
+
+`status.phase` is not a liveness signal (it stays `Applied` with the operator
+scaled to zero). Use `status.observedGeneration == metadata.generation` for CR
+lag, and the Deployment `/healthz` probes on port 8081 for process health.
+
+Image/CRD skew: `kubectl get vmcpgateway -o jsonpath='{.items[*].status.crdSkew}'`
+and condition `CRDsReady`. Non-empty `crdSkew` means apply
+`charts/vmcp-operator/crds/` from the same tag as the running image.
 
 ## After install
 
@@ -43,7 +55,13 @@ helm upgrade vmcp-operator ./charts/vmcp-operator \
    - `masterPasswordSecretRef` — argon2id hash from `vmcp hash-password`
    - optional `auth.authentik.forwardAuthSecretRef` for hop trust (vmcp ≥1.2)
 2. Apply profile bundles under `deploy/profiles/` or sample CRs under `deploy/samples/`
-   (use a vmcp **≥1.2** image for AuthFacade / hop trust / `forwardIdentity`).
+   (use a vmcp **≥1.3** image for G25 catalog isolation and optional GCF;
+   **≥1.2** is enough for AuthFacade / hop trust / `forwardIdentity`).
 3. Port-forward the dashboard Service when enabled.
 
-See [docs/compatibility.md](../../docs/compatibility.md).
+See [docs/compatibility.md](../../docs/compatibility.md) and
+[docs/issue-8-adoption.md](../../docs/issue-8-adoption.md).
+
+Pre-auth identity strip needs the parent Gateway in a `watchNamespaces` entry
+(Role includes `listenerpolicies.gateway.kgateway.dev`). A Gateway in
+`gateway-system` while VmcpGateway is in `team-a` cannot receive that policy.

@@ -42,11 +42,26 @@ controller `ownerReference` to the parent CR.
 Removes at least `X-authentik-{username,groups,uid,name,email,entitlements}` and
 `X-Vmcp-Forward-Auth` (plus configured username/groups/hop header names).
 
-**Admin** (same strip + `injectForwardAuthHeader`):
+**Admin** (`injectForwardAuthHeader`, plus optional strip):
 
-Admin HTTPRoute removes the same identity headers, then optionally **sets** the
-hop header from `forwardAuthSecretRef` so browser `/admin` after Authentik
-forward-auth satisfies hop trust.
+Admin HTTPRoute optionally **sets** the hop header from `forwardAuthSecretRef`
+so browser `/admin` after Authentik forward-auth satisfies hop trust. Strip and
+set are **one** `RequestHeaderModifier` (Gateway API allows only one per rule).
+
+When hop inject is enabled, Authentik identity headers are **not** removed on
+that route: kgateway runs HTTPRoute header modifiers after extAuth, so a strip
+would delete `X-authentik-username` and break login (issue #8). The operator
+applies a kgateway `ListenerPolicy` `earlyRequestHeaderModifier` when the parent
+Gateway is in the **same namespace** as the VmcpGateway (see
+[docs/issue-8-adoption.md](issue-8-adoption.md)). Cross-namespace parents skip
+that policy (`status.listenerPolicy=SkippedCrossNamespace`).
+
+`hostname` may be omitted so admin shares `publicRoute.hostname` at `path`
+(default `/admin`). `gatewayRef` inherits the same way.
+
+`spec.extraRoutes[]` adds more path HTTPRoutes (`/mcp`, `/health`, `/api/v1`,
+…). HTTPRoute name is `{gateway}-{name}` so `attachments` TrafficPolicies can
+target them. Hop inject on extra routes is opt-in.
 
 Note: Gateway API `RequestHeaderModifier.set` takes a literal value, so the hop
 secret appears in the HTTPRoute object. Restrict `get/list` on HTTPRoutes

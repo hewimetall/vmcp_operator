@@ -61,6 +61,7 @@ def _gateway() -> GatewayDesired:
         admin_route=RouteDesired(
             hostname="admin-main.example.com",
             gateway_ref=GatewayParentRef(name="kgateway"),
+            path="/admin",
         ),
     )
 

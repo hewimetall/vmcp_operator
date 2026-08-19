@@ -32,10 +32,15 @@ class ListEnvironments:
 def _to_row(gateway: GatewayDesired, phase: str) -> EnvironmentRow:
     admin_url = None
     if gateway.admin_route is not None:
-        admin_url = f"https://{gateway.admin_route.hostname}/admin"
+        admin_url = _https_url(gateway.admin_route.hostname, gateway.admin_route.path)
     return EnvironmentRow(
         key=gateway.key,
         phase=phase,
         public_hostname=gateway.public_route.hostname,
         admin_url=admin_url,
     )
+
+
+def _https_url(hostname: str, path: str) -> str:
+    suffix = path if path.startswith("/") else f"/{path}"
+    return f"https://{hostname}{suffix}"

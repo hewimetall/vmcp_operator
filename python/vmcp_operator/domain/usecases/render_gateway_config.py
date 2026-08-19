@@ -16,7 +16,10 @@ def _tokens_file_path(gateway: GatewayDesired) -> str:
 
 
 def render_gateway_config(gateway: GatewayDesired) -> str:
-    """Produce a deterministic vmcp.toml matching vmcp ≥1.2 Settings shape."""
+    """Produce a deterministic vmcp.toml matching vmcp ≥1.2 Settings shape.
+
+    ``[gql].gcf`` / ``[proxy].gcf`` are vmcp ≥1.3 (serde ignores unknown keys on 1.2).
+    """
     public_base = (gateway.public_base_url or f"https://{gateway.public_route.hostname}").rstrip(
         "/"
     )
@@ -34,10 +37,12 @@ def render_gateway_config(gateway: GatewayDesired) -> str:
         "[gql]",
         f"max_depth = {gateway.gql.max_depth}",
         f"max_complexity = {gateway.gql.max_complexity}",
+        f"gcf = {_toml_bool(gateway.gql.gcf)}",
         "",
         "[proxy]",
         f"enabled = {_toml_bool(gateway.proxy.enabled)}",
         f'mcp_path = "{_toml_str(gateway.proxy.path)}"',
+        f"gcf = {_toml_bool(gateway.proxy.gcf)}",
         "",
         "[tasks]",
         f"enabled = {_toml_bool(gateway.tasks.enabled)}",
