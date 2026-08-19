@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass, field
 
 from vmcp_operator.domain.models.gateway import SecretRef
@@ -18,23 +19,40 @@ class InMemorySecretValueLoader:
 @dataclass(frozen=True, slots=True)
 class Kr8sSecretValueLoader:
     async def get(self, namespace: str, ref: SecretRef) -> str | None:
-        import base64
-
         import kr8s
+        from kr8s._exceptions import NotFoundError
+        from kr8s.asyncio.objects import Secret
 
         api = await kr8s.asyncio.api()
+        obj = Secret(
+            {"metadata": {"name": ref.name, "namespace": namespace}},
+            api=api,
+        )
         try:
-            secret = await api.get("secret", ref.name, namespace=namespace)
+            if not await obj.exists():
+                return None
+            await obj.refresh()
+        except NotFoundError:
+            return None
         except Exception:
             return None
-        # Prefer decoded `.data` when kr8s exposes it; otherwise decode raw base64.
-        decoded = getattr(secret, "data", None) or {}
-        if ref.key in decoded:
-            value = decoded[ref.key]
-            return value.decode("utf-8") if isinstance(value, bytes) else str(value)
-        raw = (secret.raw.get("data") or {}).get(ref.key)
+        raw = (obj.raw.get("data") or {}).get(ref.key)
         if raw is None:
             return None
-        if isinstance(raw, bytes):
+        return _decode_secret_value(raw)
+
+
+def _decode_secret_value(raw: object) -> str | None:
+    if isinstance(raw, bytes):
+        try:
+            return raw.decode("utf-8")
+        except UnicodeDecodeError:
             return base64.b64decode(raw).decode("utf-8")
-        return base64.b64decode(str(raw)).decode("utf-8")
+    text = str(raw)
+    try:
+        return base64.b64decode(text, validate=True).decode("utf-8")
+    except Exception:
+        return text
+
+
+__all__ = ["InMemorySecretValueLoader", "Kr8sSecretValueLoader"]
