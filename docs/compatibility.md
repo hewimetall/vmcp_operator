@@ -20,7 +20,9 @@
 | Public edge strip of client Authentik/hop headers | `publicRoute.stripClientIdentityHeaders` (default true) → HTTPRoute `RequestHeaderModifier.remove` |
 | Pre-auth strip (kgateway OSS, vmcp ADR 0001) | Same-namespace `ListenerPolicy` `earlyRequestHeaderModifier`; skipped when `gatewayRef.namespace` differs (`status.listenerPolicy`) |
 | Admin hop inject + same-host path | `adminRoute` inherits public hostname/`gatewayRef` when omitted; `path` default `/admin`; hop `set` merged into the same `RequestHeaderModifier` |
+| Extra path HTTPRoutes | `spec.extraRoutes[]` (`name`+`path`; inherit host/parent) → `{gateway}-{name}` |
 | Admin strip vs forward-auth | When hop inject is on, Authentik identity headers are kept (HTTPRoute RHM runs after kgateway extAuth) |
+| CR status / GC | top-level `status.phase` + `observedGeneration` (+ `artifactSha256`, `listenerPolicy`, `crdSkew`, `CRDsReady`); finalizers; child `ownerReferences` |
 | `enableServiceLinks: false` on Gateway pods | always (avoids `VMCP_PORT=tcp://…` when Gateway is named `vmcp`) |
 | `public_base_url` override | `spec.publicBaseUrl` (else `https://{publicRoute.hostname}`) |
 | BYO HTTPRoute | `publicRoute.manage` / `adminRoute.manage: false`; optional `extraFilters` |
@@ -30,7 +32,6 @@
 | Admin tokens + master password | Secret mounts / `VMCP_AUTH__MASTER_PASSWORD_ARGON2` |
 | Writable admin tokens (Token CRUD) | `adminTokenSecretRef.writable: true` → `/state/tokens.json` (seed once) |
 | Upstream bearer `${ENV}` | `source.bearerSecretRef` → pod env |
-| CR status / GC | top-level `status.phase` + `observedGeneration` (+ `artifactSha256`, `listenerPolicy`); finalizers; child `ownerReferences` |
 
 ## Catalog isolation (G25)
 

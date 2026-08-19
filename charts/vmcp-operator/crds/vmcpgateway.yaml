@@ -102,6 +102,13 @@ spec:
                     hostname:
                       type: string
                       minLength: 1
+                    path:
+                      type: string
+                      default: /
+                      description: >
+                        HTTPRoute PathPrefix (default `/`). More-specific
+                        adminRoute.path and extraRoutes[].path win via Gateway
+                        API longest-prefix match.
                     gatewayRef:
                       type: object
                       required: [name]
@@ -206,6 +213,63 @@ spec:
                       items:
                         type: object
                         x-kubernetes-preserve-unknown-fields: true
+                extraRoutes:
+                  type: array
+                  description: >
+                    Additional HTTPRoutes on the public hostname (or a distinct
+                    hostname). Use for `/mcp`, `/api/v1`, `/health`, `/ready`
+                    when those paths need their own extAuth TrafficPolicy.
+                    Each item inherits omitted hostname/gatewayRef from
+                    publicRoute. HTTPRoute name is `{gateway}-{name}`.
+                  items:
+                    type: object
+                    required: [name, path]
+                    properties:
+                      name:
+                        type: string
+                        minLength: 1
+                        description: >
+                          DNS-1123 label. HTTPRoute metadata.name is
+                          `{gateway}-{name}`. Reserved: public, admin.
+                      path:
+                        type: string
+                        minLength: 1
+                        description: HTTPRoute PathPrefix (must start with `/`).
+                      hostname:
+                        type: string
+                        description: >
+                          When omitted, uses publicRoute.hostname.
+                      gatewayRef:
+                        type: object
+                        required: [name]
+                        description: >
+                          When omitted, uses publicRoute.gatewayRef.
+                        properties:
+                          name:
+                            type: string
+                            minLength: 1
+                          namespace:
+                            type: string
+                          sectionName:
+                            type: string
+                      annotations:
+                        type: object
+                        additionalProperties:
+                          type: string
+                      stripClientIdentityHeaders:
+                        type: boolean
+                        default: true
+                      injectForwardAuthHeader:
+                        type: boolean
+                        default: false
+                      manage:
+                        type: boolean
+                        default: true
+                      extraFilters:
+                        type: array
+                        items:
+                          type: object
+                          x-kubernetes-preserve-unknown-fields: true
                 identityStrip:
                   type: object
                   description: >
@@ -386,6 +450,13 @@ spec:
                   format: int64
                 artifactSha256:
                   type: string
+                crdSkew:
+                  type: array
+                  items:
+                    type: string
+                  description: >
+                    spec./status. paths this operator image expects but the
+                    installed VmcpGateway CRD schema lacks (silent prune).
                 listenerPolicy:
                   type: object
                   description: >

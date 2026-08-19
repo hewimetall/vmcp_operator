@@ -37,6 +37,8 @@ class RouteDesired:
     extra_filters: tuple[dict[str, Any], ...] = ()
     # HTTPRoute PathPrefix. Admin defaults to /admin; public defaults to /.
     path: str = "/"
+    # extraRoutes only: DNS-1123 suffix for HTTPRoute `{gateway}-{name}`.
+    route_name: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,6 +142,7 @@ class GatewayDesired:
     master_password_secret_ref: SecretRef
     public_route: RouteDesired
     admin_route: RouteDesired | None = None
+    extra_routes: tuple[RouteDesired, ...] = ()
     persistence: PersistenceDesired = PersistenceDesired()
     tasks: TasksDesired = TasksDesired()
     proxy: ProxyDesired = ProxyDesired()

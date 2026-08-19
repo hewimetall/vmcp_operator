@@ -115,6 +115,8 @@ async def test_reconcile_gateway_applies_bundle(runtime: OperatorRuntime) -> Non
     assert patch.status["artifactSha256"]
     assert patch.status["listenerPolicy"]["phase"] == "Applied"
     assert "identity-strip" in patch.status["listenerPolicy"]["message"]
+    assert patch.status["conditions"][1]["type"] == "CRDsReady"
+    assert patch.status["conditions"][1]["reason"] == "Current"
     body: dict = {"metadata": {"finalizers": []}}
     apply_fns_to_body(patch.fns, body)
     assert "vmcp.io/gateway-protection" in body["metadata"]["finalizers"]

@@ -59,6 +59,10 @@ that policy (`status.listenerPolicy=SkippedCrossNamespace`).
 `hostname` may be omitted so admin shares `publicRoute.hostname` at `path`
 (default `/admin`). `gatewayRef` inherits the same way.
 
+`spec.extraRoutes[]` adds more path HTTPRoutes (`/mcp`, `/health`, `/api/v1`,
+…). HTTPRoute name is `{gateway}-{name}` so `attachments` TrafficPolicies can
+target them. Hop inject on extra routes is opt-in.
+
 Note: Gateway API `RequestHeaderModifier.set` takes a literal value, so the hop
 secret appears in the HTTPRoute object. Restrict `get/list` on HTTPRoutes
 accordingly.

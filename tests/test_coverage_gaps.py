@@ -25,8 +25,6 @@ from vmcp_operator.adapters.driving.k8s.runtime import (
 )
 from vmcp_operator.domain.models.artifacts import ArtifactBundle, ArtifactFile
 from vmcp_operator.domain.models.gateway import (
-    AdminAuthDesired,
-    AdminAuthMode,
     AuthDesired,
     AuthentikDesired,
     AuthProvider,
@@ -135,19 +133,19 @@ async def test_reconcile_hop_ref_none_and_wants_helpers() -> None:
         )
         is False
     )
-    # explicit true
+    # extraRoutes hop inject without admin route
     assert (
         rec._wants_admin_hop_inject(
             _gw(
-                admin_route=RouteDesired(
-                    hostname="a.example.com",
-                    gateway_ref=GatewayParentRef(name="kgateway"),
-                    inject_forward_auth_header=True,
-                ),
-                auth=AuthDesired(
-                    provider=AuthProvider.AUTHENTIK,
-                    admin=AdminAuthDesired(mode=AdminAuthMode.AUTHENTIK),
-                    authentik=AuthentikDesired(),
+                admin_route=None,
+                extra_routes=(
+                    RouteDesired(
+                        hostname="a.example.com",
+                        gateway_ref=GatewayParentRef(name="kgateway"),
+                        path="/mcp",
+                        route_name="mcp",
+                        inject_forward_auth_header=True,
+                    ),
                 ),
             )
         )

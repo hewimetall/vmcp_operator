@@ -41,7 +41,12 @@ helm upgrade vmcp-operator ./charts/vmcp-operator \
 ```
 
 `status.phase` is not a liveness signal (it stays `Applied` with the operator
-scaled to zero). Use `status.observedGeneration == metadata.generation`.
+scaled to zero). Use `status.observedGeneration == metadata.generation` for CR
+lag, and the Deployment `/healthz` probes on port 8081 for process health.
+
+Image/CRD skew: `kubectl get vmcpgateway -o jsonpath='{.items[*].status.crdSkew}'`
+and condition `CRDsReady`. Non-empty `crdSkew` means apply
+`charts/vmcp-operator/crds/` from the same tag as the running image.
 
 ## After install
 

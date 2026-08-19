@@ -17,6 +17,7 @@ def apply_status(
     message: str | None = None,
     ready: bool | None = None,
     listener_policy: Mapping[str, Any] | None = None,
+    crd_skew: tuple[str, ...] | None = None,
 ) -> None:
     """Write top-level ``status`` fields accepted by the Vmcp* CRD schemas.
 
@@ -32,19 +33,36 @@ def apply_status(
         status["artifactSha256"] = artifact_sha256
     if listener_policy is not None:
         status["listenerPolicy"] = dict(listener_policy)
+    if crd_skew is not None:
+        status["crdSkew"] = list(crd_skew)
 
     if ready is None:
         ready = phase in {"Applied", "Registered", "Finalized"}
-    condition: dict[str, Any] = {
-        "type": "Ready",
-        "status": "True" if ready else "False",
-        "reason": reason or phase,
-        "message": message or phase,
-        "lastTransitionTime": datetime.now(UTC).replace(microsecond=0).isoformat().replace(
-            "+00:00", "Z"
-        ),
-    }
-    status["conditions"] = [condition]
+    now = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    conditions: list[dict[str, Any]] = [
+        {
+            "type": "Ready",
+            "status": "True" if ready else "False",
+            "reason": reason or phase,
+            "message": message or phase,
+            "lastTransitionTime": now,
+        }
+    ]
+    if crd_skew is not None:
+        conditions.append(
+            {
+                "type": "CRDsReady",
+                "status": "False" if crd_skew else "True",
+                "reason": "SchemaSkew" if crd_skew else "Current",
+                "message": (
+                    "API will prune: " + ", ".join(crd_skew)
+                    if crd_skew
+                    else "VmcpGateway CRD matches this operator image"
+                ),
+                "lastTransitionTime": now,
+            }
+        )
+    status["conditions"] = conditions
 
 
 def generation_of(meta: Mapping[str, Any] | None, body: Mapping[str, Any] | None = None) -> int:

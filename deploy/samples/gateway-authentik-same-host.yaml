@@ -1,8 +1,11 @@
-# Same-host admin: one hostname, /admin is a distinct HTTPRoute.
+# Same-host admin + extra path routes (issue #8).
 #
 # public  PathPrefix /       — identity headers stripped (HTTPRoute, after auth)
 # admin   PathPrefix /admin  — hop header injected; Authentik headers kept
-#                             so kgateway extAuth (TrafficPolicy) can set them
+# mcp     PathPrefix /mcp    — own TrafficPolicy via attachments (name: *-mcp)
+# api     PathPrefix /api/v1
+# health  PathPrefix /health — typically no extAuth
+# ready   PathPrefix /ready
 # Parent Gateway is in gateway-system → no ListenerPolicy (cross-namespace).
 apiVersion: vmcp.io/v1alpha1
 kind: VmcpGateway
@@ -28,6 +31,15 @@ spec:
     path: /admin
     injectForwardAuthHeader: true
     stripClientIdentityHeaders: true
+  extraRoutes:
+    - name: mcp
+      path: /mcp
+    - name: api
+      path: /api/v1
+    - name: health
+      path: /health
+    - name: ready
+      path: /ready
   attachments:
     - apiVersion: gateway.kgateway.dev/v1alpha1
       kind: TrafficPolicy
@@ -38,6 +50,7 @@ spec:
           - group: gateway.networking.k8s.io
             kind: HTTPRoute
             name: main-shared-host-admin
+    # Target main-shared-host-mcp / -api with their own extAuth policies.
   auth:
     enabled: true
     provider: authentik

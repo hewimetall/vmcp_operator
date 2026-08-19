@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import copy
+import re
+from dataclasses import replace
 from typing import Any
 
 from vmcp_operator.domain.models.gateway import (
@@ -45,6 +47,7 @@ def map_gateway(namespace: str, name: str, spec: dict[str, Any]) -> GatewayDesir
     admin = (
         _route(admin_raw, role="admin", inherit_from=public) if admin_raw else None
     )
+    extra_routes = _extra_routes(spec.get("extraRoutes") or (), inherit_from=public)
     persistence = spec.get("persistence") or {}
     tasks = spec.get("tasks") or {}
     proxy = spec.get("proxy") or {}
@@ -60,6 +63,7 @@ def map_gateway(namespace: str, name: str, spec: dict[str, Any]) -> GatewayDesir
         ),
         public_route=public,
         admin_route=admin,
+        extra_routes=extra_routes,
         persistence=PersistenceDesired(
             size=str(persistence.get("size", "5Gi")),
             storage_class_name=persistence.get("storageClassName"),
@@ -215,21 +219,55 @@ def _secret_ref(raw: dict[str, Any], *, default_key: str = "token") -> SecretRef
     )
 
 
+_ROUTE_NAME_RE = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
+_RESERVED_ROUTE_NAMES = frozenset({"public", "admin"})
+
+
+def _extra_routes(
+    raw_items: Any,
+    *,
+    inherit_from: RouteDesired,
+) -> tuple[RouteDesired, ...]:
+    if raw_items is None:
+        return ()
+    if not isinstance(raw_items, list | tuple):
+        raise ValueError("extraRoutes must be an array")
+    seen: set[str] = set()
+    routes: list[RouteDesired] = []
+    for i, item in enumerate(raw_items):
+        if not isinstance(item, dict):
+            raise ValueError(f"extraRoutes[{i}] must be an object")
+        name = str(item.get("name") or "").strip()
+        if not name:
+            raise ValueError("extraRoutes[].name is required")
+        if len(name) > 63 or not _ROUTE_NAME_RE.fullmatch(name):
+            raise ValueError("extraRoutes[].name must be a DNS-1123 label")
+        if name in _RESERVED_ROUTE_NAMES:
+            raise ValueError("extraRoutes[].name cannot be 'public' or 'admin'")
+        if name in seen:
+            raise ValueError(f"extraRoutes[].name `{name}` is duplicated")
+        seen.add(name)
+        route = _route(item, role="extra", inherit_from=inherit_from)
+        routes.append(replace(route, route_name=name))
+    return tuple(routes)
+
+
 def _route(
     raw: dict[str, Any],
     *,
     role: str,
     inherit_from: RouteDesired | None = None,
 ) -> RouteDesired:
-    """Map a public/admin route. Admin may omit hostname/gatewayRef (issue #8)."""
+    """Map a public/admin/extra route. Admin/extra may omit hostname/gatewayRef."""
     hostname = str(raw.get("hostname") or "").strip()
     if not hostname:
         if inherit_from is None:
-            raise ValueError(f"{role}Route.hostname is required")
+            field = f"{role}Route.hostname" if role != "extra" else "extraRoutes[].hostname"
+            raise ValueError(f"{field} is required")
         hostname = inherit_from.hostname
     gateway_ref = _parent_ref_from_raw(
         raw.get("gatewayRef"),
-        field=f"{role}Route.gatewayRef",
+        field=("extraRoutes[].gatewayRef" if role == "extra" else f"{role}Route.gatewayRef"),
         inherit_from=None if inherit_from is None else inherit_from.gateway_ref,
     )
     annotations = tuple(
@@ -240,6 +278,9 @@ def _route(
     inject: bool | None = None if inject_raw is None else bool(inject_raw)
     if role == "public":
         # Public edge never injects the hop secret.
+        inject = False
+    elif role == "extra" and inject_raw is None:
+        # extraRoutes hop inject is opt-in (unlike admin auto-from-secret).
         inject = False
     extra = tuple(
         copy.deepcopy(item)
@@ -283,11 +324,16 @@ def _parent_ref_from_raw(
 
 
 def _route_path(raw: Any, *, role: str) -> str:
+    field = "extraRoutes[].path" if role == "extra" else f"{role}Route.path"
     if raw is None or str(raw).strip() == "":
-        return "/admin" if role == "admin" else "/"
+        if role == "admin":
+            return "/admin"
+        if role == "extra":
+            raise ValueError(f"{field} is required")
+        return "/"
     path = str(raw).strip()
     if not path.startswith("/"):
-        raise ValueError(f"{role}Route.path must start with '/'")
+        raise ValueError(f"{field} must start with '/'")
     return path
 
 

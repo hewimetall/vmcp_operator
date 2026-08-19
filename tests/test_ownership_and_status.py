@@ -61,6 +61,20 @@ def test_status_and_finalizer_patch_helpers() -> None:
     assert patch.status["observedGeneration"] == 4
     assert patch.status["artifactSha256"] == "abc"
     assert patch.status["listenerPolicy"] == {"phase": "Applied", "message": "lp"}
+    apply_status(
+        patch,
+        phase="Applied",
+        generation=5,
+        crd_skew=("spec.identityStrip",),
+    )
+    types = [c["type"] for c in patch.status["conditions"]]
+    assert types == ["Ready", "CRDsReady"]
+    assert patch.status["crdSkew"] == ["spec.identityStrip"]
+    assert patch.status["conditions"][1]["reason"] == "SchemaSkew"
+    apply_status(patch, phase="Applied", generation=6, crd_skew=())
+    assert patch.status["crdSkew"] == []
+    assert patch.status["conditions"][1]["reason"] == "Current"
+    assert patch.status["conditions"][1]["status"] == "True"
     assert patch.status["conditions"][0]["type"] == "Ready"
     schedule_finalizer_adds(patch, ("vmcp.io/gateway-protection",))
     schedule_finalizer_removes(patch, ("vmcp.io/gateway-protection",))

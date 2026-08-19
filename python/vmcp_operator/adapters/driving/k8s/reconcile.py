@@ -16,6 +16,7 @@ from vmcp_operator.domain.usecases.reconcile_artifacts import ReconcileGatewayAr
 from vmcp_operator.domain.usecases.render_gateway_manifests import (
     RenderGatewayManifests,
     plan_early_identity_strip,
+    wants_hop_inject,
 )
 from vmcp_operator.domain.usecases.render_mcp_manifests import RenderMcpManifests
 
@@ -75,13 +76,12 @@ class GatewayReconcile:
 
 
 def _wants_admin_hop_inject(gateway: GatewayDesired) -> bool:
-    route = gateway.admin_route
-    if route is None:
-        return False
-    want = route.inject_forward_auth_header
-    if want is None:
-        return gateway.auth.authentik.forward_auth_secret_ref is not None
-    return want
+    """True when any managed admin/extra HTTPRoute should set the hop header."""
+    routes = []
+    if gateway.admin_route is not None:
+        routes.append(gateway.admin_route)
+    routes.extend(gateway.extra_routes)
+    return any(route.manage and wants_hop_inject(route, gateway) for route in routes)
 
 
 def _materialize_attachment(

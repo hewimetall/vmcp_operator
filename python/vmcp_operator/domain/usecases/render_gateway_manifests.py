@@ -203,70 +203,81 @@ class RenderGatewayManifests:
 
         manifests: list[dict[str, Any]] = [pvc, configmap, service, deployment]
         if gateway.public_route.manage:
-            public_rule: dict[str, Any] = {
-                "matches": [
-                    {"path": {"type": "PathPrefix", "value": gateway.public_route.path}}
-                ],
-                "backendRefs": [{"name": name, "port": 8080}],
-            }
-            public_filters = _route_filters(
-                gateway,
-                route=gateway.public_route,
-                forward_auth_header_value=None,
-                inject=False,
+            manifests.append(
+                _httproute(
+                    gateway,
+                    gateway.public_route,
+                    suffix="public",
+                    labels=labels,
+                    inject=False,
+                    forward_auth_header_value=None,
+                )
             )
-            if public_filters:
-                public_rule["filters"] = public_filters
-            public_route = {
-                "apiVersion": "gateway.networking.k8s.io/v1",
-                "kind": "HTTPRoute",
-                "metadata": {
-                    "name": f"{name}-public",
-                    "namespace": ns,
-                    "labels": labels,
-                },
-                "spec": {
-                    "parentRefs": [_parent_ref(gateway.public_route.gateway_ref)],
-                    "hostnames": [gateway.public_route.hostname],
-                    "rules": [public_rule],
-                },
-            }
-            if gateway.public_route.annotations:
-                public_route["metadata"]["annotations"] = dict(gateway.public_route.annotations)
-            manifests.append(public_route)
         if gateway.admin_route is not None and gateway.admin_route.manage:
-            admin_rule: dict[str, Any] = {
-                "matches": [
-                    {"path": {"type": "PathPrefix", "value": gateway.admin_route.path}}
-                ],
-                "backendRefs": [{"name": name, "port": 8080}],
-            }
-            admin_filters = _route_filters(
-                gateway,
-                route=gateway.admin_route,
-                forward_auth_header_value=forward_auth_header_value,
-                inject=True,
+            manifests.append(
+                _httproute(
+                    gateway,
+                    gateway.admin_route,
+                    suffix="admin",
+                    labels=labels,
+                    inject=True,
+                    forward_auth_header_value=forward_auth_header_value,
+                )
             )
-            if admin_filters:
-                admin_rule["filters"] = admin_filters
-            admin_obj: dict[str, Any] = {
-                "apiVersion": "gateway.networking.k8s.io/v1",
-                "kind": "HTTPRoute",
-                "metadata": {
-                    "name": f"{name}-admin",
-                    "namespace": ns,
-                    "labels": labels,
-                },
-                "spec": {
-                    "parentRefs": [_parent_ref(gateway.admin_route.gateway_ref)],
-                    "hostnames": [gateway.admin_route.hostname],
-                    "rules": [admin_rule],
-                },
-            }
-            if gateway.admin_route.annotations:
-                admin_obj["metadata"]["annotations"] = dict(gateway.admin_route.annotations)
-            manifests.append(admin_obj)
+        for extra in gateway.extra_routes:
+            if not extra.manage:
+                continue
+            manifests.append(
+                _httproute(
+                    gateway,
+                    extra,
+                    suffix=extra.route_name or "extra",
+                    labels=labels,
+                    inject=True,
+                    forward_auth_header_value=forward_auth_header_value,
+                )
+            )
         return manifests
+
+
+def _httproute(
+    gateway: GatewayDesired,
+    route: RouteDesired,
+    *,
+    suffix: str,
+    labels: dict[str, str],
+    inject: bool,
+    forward_auth_header_value: str | None,
+) -> dict[str, Any]:
+    rule: dict[str, Any] = {
+        "matches": [{"path": {"type": "PathPrefix", "value": route.path}}],
+        "backendRefs": [{"name": gateway.key.name, "port": 8080}],
+    }
+    filters = _route_filters(
+        gateway,
+        route=route,
+        forward_auth_header_value=forward_auth_header_value,
+        inject=inject,
+    )
+    if filters:
+        rule["filters"] = filters
+    obj: dict[str, Any] = {
+        "apiVersion": "gateway.networking.k8s.io/v1",
+        "kind": "HTTPRoute",
+        "metadata": {
+            "name": f"{gateway.key.name}-{suffix}",
+            "namespace": gateway.key.namespace,
+            "labels": labels,
+        },
+        "spec": {
+            "parentRefs": [_parent_ref(route.gateway_ref)],
+            "hostnames": [route.hostname],
+            "rules": [rule],
+        },
+    }
+    if route.annotations:
+        obj["metadata"]["annotations"] = dict(route.annotations)
+    return obj
 
 
 def _identity_remove_headers(gateway: GatewayDesired) -> list[str]:
@@ -287,7 +298,7 @@ def _identity_remove_headers(gateway: GatewayDesired) -> list[str]:
     return remove
 
 
-def _wants_hop_inject(route: RouteDesired, gateway: GatewayDesired) -> bool:
+def wants_hop_inject(route: RouteDesired, gateway: GatewayDesired) -> bool:
     want = route.inject_forward_auth_header
     if want is None:
         return gateway.auth.authentik.forward_auth_secret_ref is not None
@@ -313,7 +324,7 @@ def _strip_headers_for_route(
     if not route.strip_client_identity_headers:
         return []
     headers = _identity_remove_headers(gateway)
-    if inject and _wants_hop_inject(route, gateway):
+    if inject and wants_hop_inject(route, gateway):
         # HTTPRoute RequestHeaderModifier runs *after* kgateway extAuth
         # (issue #8). Stripping Authentik identity here undoes forward-auth.
         headers = [h for h in headers if not _is_forward_auth_identity_header(gateway, h)]
@@ -376,7 +387,7 @@ def _route_filters(
     set_headers: list[dict[str, str]] = []
     add_headers: list[dict[str, str]] = []
     extra_filters: list[dict[str, Any]] = []
-    if inject and _wants_hop_inject(route, gateway) and forward_auth_header_value:
+    if inject and wants_hop_inject(route, gateway) and forward_auth_header_value:
         hop_header = gateway.auth.authentik.forward_auth_secret_header or "x-vmcp-forward-auth"
         set_headers.append({"name": hop_header, "value": forward_auth_header_value})
     remove = _strip_headers_for_route(
@@ -539,6 +550,7 @@ def _strip_routes(gateway: GatewayDesired) -> list[RouteDesired]:
     routes = [gateway.public_route]
     if gateway.admin_route is not None:
         routes.append(gateway.admin_route)
+    routes.extend(gateway.extra_routes)
     return [route for route in routes if route.strip_client_identity_headers]
 
 

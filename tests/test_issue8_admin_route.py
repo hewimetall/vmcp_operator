@@ -114,6 +114,10 @@ def test_map_same_host_sample() -> None:
     assert gw.admin_route.hostname == gw.public_route.hostname
     assert gw.admin_route.path == "/admin"
     assert gw.admin_route.inject_forward_auth_header is True
+    assert [r.route_name for r in gw.extra_routes] == ["mcp", "api", "health", "ready"]
+    assert gw.extra_routes[0].path == "/mcp"
+    assert gw.extra_routes[0].hostname == gw.public_route.hostname
+    assert gw.extra_routes[0].inject_forward_auth_header is False
 
 
 def test_merged_header_modifier_and_extra_filters() -> None:
@@ -534,3 +538,62 @@ async def test_reconcile_applies_listener_policy_with_owner() -> None:
         "name": "kgateway",
         "sectionName": "https",
     }
+
+
+def test_extra_routes_inherit_and_render() -> None:
+    spec = _base_spec()
+    spec["extraRoutes"] = [
+        {"name": "mcp", "path": "/mcp"},
+        {"name": "health", "path": "/health", "stripClientIdentityHeaders": False},
+        {
+            "name": "api",
+            "path": "/api/v1",
+            "injectForwardAuthHeader": True,
+            "manage": True,
+        },
+        {"name": "byo", "path": "/internal", "manage": False},
+    ]
+    gw = map_gateway("team-a", "main", spec)
+    assert [r.route_name for r in gw.extra_routes] == ["mcp", "health", "api", "byo"]
+    assert gw.extra_routes[0].hostname == "vmcp.example.com"
+    assert gw.extra_routes[0].gateway_ref.namespace == "gw"
+    names = {
+        m["metadata"]["name"]
+        for m in RenderGatewayManifests().execute(gw, _artifacts())
+        if m["kind"] == "HTTPRoute"
+    }
+    assert names == {"main-public", "main-mcp", "main-health", "main-api"}
+    manifests = RenderGatewayManifests().execute(gw, _artifacts())
+    mcp = next(m for m in manifests if m["metadata"]["name"] == "main-mcp")
+    assert mcp["spec"]["rules"][0]["matches"][0]["path"]["value"] == "/mcp"
+    health = next(m for m in manifests if m["metadata"]["name"] == "main-health")
+    assert "filters" not in health["spec"]["rules"][0]
+
+
+def test_extra_routes_validation() -> None:
+    spec = _base_spec()
+    spec["extraRoutes"] = "nope"
+    with pytest.raises(ValueError, match="extraRoutes must be an array"):
+        map_gateway("team-a", "main", spec)
+    spec["extraRoutes"] = ["x"]
+    with pytest.raises(ValueError, match=r"extraRoutes\[0\] must be an object"):
+        map_gateway("team-a", "main", spec)
+    spec["extraRoutes"] = [{"path": "/mcp"}]
+    with pytest.raises(ValueError, match="extraRoutes\\[\\]\\.name is required"):
+        map_gateway("team-a", "main", spec)
+    spec["extraRoutes"] = [{"name": "Public", "path": "/mcp"}]
+    with pytest.raises(ValueError, match="DNS-1123"):
+        map_gateway("team-a", "main", spec)
+    spec["extraRoutes"] = [{"name": "public", "path": "/mcp"}]
+    with pytest.raises(ValueError, match="cannot be 'public' or 'admin'"):
+        map_gateway("team-a", "main", spec)
+    spec["extraRoutes"] = [{"name": "mcp", "path": "/mcp"}, {"name": "mcp", "path": "/x"}]
+    with pytest.raises(ValueError, match="duplicated"):
+        map_gateway("team-a", "main", spec)
+    spec["extraRoutes"] = [{"name": "mcp"}]
+    with pytest.raises(ValueError, match="extraRoutes\\[\\]\\.path is required"):
+        map_gateway("team-a", "main", spec)
+    spec["extraRoutes"] = [{"name": "mcp", "path": "mcp"}]
+    with pytest.raises(ValueError, match="must start with '/'"):
+        map_gateway("team-a", "main", spec)
+
